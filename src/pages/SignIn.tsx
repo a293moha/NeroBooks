@@ -30,7 +30,7 @@ export default function SignIn() {
       return;
     }
     setError("");
-    signIn({ name: email.split("@")[0], email: email.trim() });
+    signIn({ name: email.split("@")[0], email: email.trim(), plan: "starter" });
   };
 
   const submitCheckout = (e: React.FormEvent) => {
@@ -41,7 +41,7 @@ export default function SignIn() {
     }
     setError("");
     if (country) setCurrencyCode(country.currency);
-    signIn({ name: name.trim(), email: email.trim() });
+    signIn({ name: name.trim(), email: email.trim(), plan: planId ?? "starter" });
   };
 
   const plan = plans.find((p) => p.id === planId);

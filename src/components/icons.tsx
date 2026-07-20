@@ -78,6 +78,23 @@ export const ReportsIcon = (p: SVGProps<SVGSVGElement>) => (
   </Icon>
 );
 
+export const TeamIcon = (p: SVGProps<SVGSVGElement>) => (
+  <Icon {...p}>
+    <circle cx="8" cy="8" r="3" />
+    <circle cx="16" cy="8" r="3" />
+    <path d="M2 20c0-3 2.5-5 6-5s6 2 6 5" />
+    <path d="M13.5 15c3 .3 4.5 2.2 4.5 5" />
+  </Icon>
+);
+
+export const BillingIcon = (p: SVGProps<SVGSVGElement>) => (
+  <Icon {...p}>
+    <rect x="2.5" y="5" width="19" height="14" rx="2" />
+    <path d="M2.5 10h19" />
+    <path d="M6 15h5" />
+  </Icon>
+);
+
 export const SearchIcon = (p: SVGProps<SVGSVGElement>) => (
   <Icon {...p}>
     <circle cx="11" cy="11" r="7" />

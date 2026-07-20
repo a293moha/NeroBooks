@@ -2,9 +2,12 @@ import { useEffect, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { useData } from "../context/DataContext";
 import { useCurrency } from "../context/CurrencyContext";
+import { useAuth } from "../context/AuthContext";
+import { planLimits } from "../lib/planLimits";
 import { currency, formatDate, invoiceTotal } from "../lib/format";
 import Modal from "../components/Modal";
 import StatusBadge from "../components/StatusBadge";
+import UpgradeBanner from "../components/UpgradeBanner";
 import { PlusIcon } from "../components/icons";
 import type { Invoice, InvoiceLineItem } from "../types";
 
@@ -17,7 +20,8 @@ function emptyLine(): InvoiceLineItem {
 
 export default function Invoices() {
   const { invoices, customers, addInvoice } = useData();
-  const { currencyCode } = useCurrency();
+  const { currencyCode, currencyOptions } = useCurrency();
+  const { user } = useAuth();
   const [searchParams, setSearchParams] = useSearchParams();
   const [open, setOpen] = useState(false);
   const [filter, setFilter] = useState<"all" | Invoice["status"]>("all");
@@ -26,6 +30,9 @@ export default function Invoices() {
   const [issueDate, setIssueDate] = useState(today());
   const [dueDate, setDueDate] = useState(in30Days());
   const [lineItems, setLineItems] = useState<InvoiceLineItem[]>([emptyLine()]);
+  const [invoiceCurrency, setInvoiceCurrency] = useState(currencyCode);
+
+  const canUseMultiCurrency = user ? planLimits[user.plan].multiCurrencyInvoicing : false;
 
   useEffect(() => {
     if (searchParams.get("new") === "1") {
@@ -50,6 +57,7 @@ export default function Invoices() {
     setIssueDate(today());
     setDueDate(in30Days());
     setLineItems([emptyLine()]);
+    setInvoiceCurrency(currencyCode);
   };
 
   const submit = (status: Invoice["status"]) => {
@@ -63,6 +71,7 @@ export default function Invoices() {
       dueDate,
       status,
       lineItems: lineItems.filter((l) => l.description.trim()),
+      currency: canUseMultiCurrency && invoiceCurrency !== currencyCode ? invoiceCurrency : undefined,
     };
     addInvoice(invoice);
     reset();
@@ -123,7 +132,14 @@ export default function Invoices() {
                   <td>
                     <StatusBadge status={inv.status} />
                   </td>
-                  <td className="cell-num">{currency(invoiceTotal(inv), currencyCode)}</td>
+                  <td className="cell-num">
+                    {currency(invoiceTotal(inv), inv.currency ?? currencyCode)}
+                    {inv.currency && inv.currency !== currencyCode && (
+                      <span className="cell-muted" style={{ marginLeft: 6, fontSize: 12 }}>
+                        ({inv.currency})
+                      </span>
+                    )}
+                  </td>
                 </tr>
               ))}
             </tbody>
@@ -160,8 +176,25 @@ export default function Invoices() {
                 ))}
               </select>
             </div>
-            <div />
+            <div>
+              <label>Currency {!canUseMultiCurrency && "🔒"}</label>
+              {canUseMultiCurrency ? (
+                <select value={invoiceCurrency} onChange={(e) => setInvoiceCurrency(e.target.value)}>
+                  {currencyOptions.map((c) => (
+                    <option key={c.code} value={c.code}>
+                      {c.code} — {c.name}
+                    </option>
+                  ))}
+                </select>
+              ) : (
+                <input value={`${currencyCode} (account default)`} disabled />
+              )}
+            </div>
           </div>
+
+          {!canUseMultiCurrency && (
+            <UpgradeBanner message="Starter invoices always use your account currency. Upgrade to Pro to bill customers in any currency." />
+          )}
           <div className="field-row">
             <div>
               <label>Issue date</label>
@@ -208,7 +241,7 @@ export default function Invoices() {
 
           <div className="invoice-total-line">
             <span>Total</span>
-            <span>{currency(total, currencyCode)}</span>
+            <span>{currency(total, canUseMultiCurrency ? invoiceCurrency : currencyCode)}</span>
           </div>
         </Modal>
       )}

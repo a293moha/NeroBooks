@@ -161,3 +161,9 @@ export function convertFromUsd(usdAmount: number, currencyCode: string): number 
   const rate = usdExchangeRates[currencyCode] ?? 1;
   return usdAmount * rate;
 }
+
+export function convertAmount(amount: number, fromCurrency: string, toCurrency: string): number {
+  if (fromCurrency === toCurrency) return amount;
+  const usdAmount = amount / (usdExchangeRates[fromCurrency] ?? 1);
+  return convertFromUsd(usdAmount, toCurrency);
+}

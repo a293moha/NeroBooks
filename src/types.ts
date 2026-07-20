@@ -16,6 +16,14 @@ export interface Invoice {
   status: InvoiceStatus;
   lineItems: InvoiceLineItem[];
   notes?: string;
+  /** Pro-only: per-invoice currency override. Absent = account default currency. */
+  currency?: string;
+}
+
+export interface TeamMember {
+  id: string;
+  name: string;
+  email: string;
 }
 
 export interface Customer {

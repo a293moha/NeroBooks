@@ -12,6 +12,7 @@ import {
 } from "recharts";
 import { useData } from "../context/DataContext";
 import { useCurrency } from "../context/CurrencyContext";
+import { convertAmount } from "../lib/exchangeRates";
 import { currency, invoiceTotal } from "../lib/format";
 import StatusBadge from "../components/StatusBadge";
 
@@ -46,17 +47,20 @@ export default function Dashboard() {
   const { currencyCode, currencyOptions } = useCurrency();
   const symbol = currencyOptions.find((c) => c.code === currencyCode)?.symbol ?? "$";
 
+  const inAccountCurrency = (inv: (typeof invoices)[number]) =>
+    convertAmount(invoiceTotal(inv), inv.currency ?? currencyCode, currencyCode);
+
   const outstanding = invoices
     .filter((i) => i.status === "sent" || i.status === "overdue")
-    .reduce((sum, i) => sum + invoiceTotal(i), 0);
+    .reduce((sum, i) => sum + inAccountCurrency(i), 0);
 
   const overdue = invoices
     .filter((i) => i.status === "overdue")
-    .reduce((sum, i) => sum + invoiceTotal(i), 0);
+    .reduce((sum, i) => sum + inAccountCurrency(i), 0);
 
   const paidThisMonth = invoices
     .filter((i) => i.status === "paid")
-    .reduce((sum, i) => sum + invoiceTotal(i), 0);
+    .reduce((sum, i) => sum + inAccountCurrency(i), 0);
 
   const totalExpenses = expenses.reduce((sum, e) => sum + e.amount, 0);
 
@@ -184,7 +188,7 @@ export default function Dashboard() {
                 <td>
                   <StatusBadge status={inv.status} />
                 </td>
-                <td className="cell-num">{currency(invoiceTotal(inv), currencyCode)}</td>
+                <td className="cell-num">{currency(invoiceTotal(inv), inv.currency ?? currencyCode)}</td>
               </tr>
             ))}
           </tbody>

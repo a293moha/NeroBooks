@@ -3,6 +3,7 @@ import Layout from "./components/Layout";
 import { AuthProvider, useAuth } from "./context/AuthContext";
 import { CurrencyProvider } from "./context/CurrencyContext";
 import { DataProvider } from "./context/DataContext";
+import { TeamProvider } from "./context/TeamContext";
 import SignIn from "./pages/SignIn";
 import Dashboard from "./pages/Dashboard";
 import Invoices from "./pages/Invoices";
@@ -12,6 +13,8 @@ import Vendors from "./pages/Vendors";
 import Accounts from "./pages/Accounts";
 import Transactions from "./pages/Transactions";
 import Reports from "./pages/Reports";
+import Team from "./pages/Team";
+import Billing from "./pages/Billing";
 
 function AuthGate() {
   const { user } = useAuth();
@@ -29,6 +32,8 @@ function AuthGate() {
         <Route path="accounts" element={<Accounts />} />
         <Route path="transactions" element={<Transactions />} />
         <Route path="reports" element={<Reports />} />
+        <Route path="team" element={<Team />} />
+        <Route path="billing" element={<Billing />} />
       </Route>
     </Routes>
   );
@@ -39,9 +44,11 @@ function App() {
     <AuthProvider>
       <CurrencyProvider>
         <DataProvider>
-          <HashRouter>
-            <AuthGate />
-          </HashRouter>
+          <TeamProvider>
+            <HashRouter>
+              <AuthGate />
+            </HashRouter>
+          </TeamProvider>
         </DataProvider>
       </CurrencyProvider>
     </AuthProvider>

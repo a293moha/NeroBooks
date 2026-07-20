@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { NavLink, Outlet } from "react-router-dom";
 import {
   AccountsIcon,
+  BillingIcon,
   CustomersIcon,
   DashboardIcon,
   ExpensesIcon,
@@ -9,6 +10,7 @@ import {
   PlusIcon,
   ReportsIcon,
   SearchIcon,
+  TeamIcon,
   TransactionsIcon,
   VendorsIcon,
 } from "./icons";
@@ -42,6 +44,13 @@ const navGroups = [
       { to: "/accounts", label: "Chart of Accounts", icon: AccountsIcon },
       { to: "/transactions", label: "Transactions", icon: TransactionsIcon },
       { to: "/reports", label: "Reports", icon: ReportsIcon },
+    ],
+  },
+  {
+    label: "Settings",
+    items: [
+      { to: "/team", label: "Team", icon: TeamIcon },
+      { to: "/billing", label: "Billing", icon: BillingIcon },
     ],
   },
 ];

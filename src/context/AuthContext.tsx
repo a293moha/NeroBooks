@@ -1,16 +1,19 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
+import type { PlanId } from "../lib/planLimits";
 
 const STORAGE_KEY = "nerabooks-auth";
 
 export interface AuthUser {
   name: string;
   email: string;
+  plan: PlanId;
 }
 
 interface AuthContextValue {
   user: AuthUser | null;
   signIn: (user: AuthUser) => void;
   signOut: () => void;
+  setPlan: (plan: PlanId) => void;
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null);
@@ -19,7 +22,8 @@ function loadInitial(): AuthUser | null {
   const raw = localStorage.getItem(STORAGE_KEY);
   if (!raw) return null;
   try {
-    return JSON.parse(raw) as AuthUser;
+    const parsed = JSON.parse(raw) as AuthUser;
+    return { ...parsed, plan: parsed.plan ?? "starter" };
   } catch {
     return null;
   }
@@ -38,8 +42,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const signIn = (nextUser: AuthUser) => setUser(nextUser);
   const signOut = () => setUser(null);
+  const setPlan = (plan: PlanId) => setUser((prev) => (prev ? { ...prev, plan } : prev));
 
-  return <AuthContext.Provider value={{ user, signIn, signOut }}>{children}</AuthContext.Provider>;
+  return <AuthContext.Provider value={{ user, signIn, signOut, setPlan }}>{children}</AuthContext.Provider>;
 }
 
 export function useAuth() {
