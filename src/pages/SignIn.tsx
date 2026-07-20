@@ -1,84 +1,185 @@
 import { useState } from "react";
 import { useAuth } from "../context/AuthContext";
+import { useCurrency } from "../context/CurrencyContext";
+import CountryPicker from "../components/CountryPicker";
+import Pricing from "../components/Pricing";
+import { plans } from "../lib/plans";
+import { convertFromUsd } from "../lib/exchangeRates";
+import { currency } from "../lib/format";
+import { flagEmoji, type Country } from "../lib/countries";
+
+type Step = "signin" | "country" | "pricing" | "checkout";
 
 export default function SignIn() {
   const { signIn } = useAuth();
-  const [mode, setMode] = useState<"signin" | "signup">("signin");
+  const { setCurrencyCode } = useCurrency();
+  const [step, setStep] = useState<Step>("signin");
+
+  const [country, setCountry] = useState<Country | null>(null);
+  const [planId, setPlanId] = useState<"starter" | "pro" | null>(null);
+
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
 
-  const submit = (e: React.FormEvent) => {
+  const submitSignIn = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!email.trim() || !password.trim() || (mode === "signup" && !name.trim())) {
+    if (!email.trim() || !password.trim()) {
       setError("Please fill in all fields.");
       return;
     }
     setError("");
-    const displayName = mode === "signup" ? name.trim() : email.split("@")[0];
-    signIn({ name: displayName, email: email.trim() });
+    signIn({ name: email.split("@")[0], email: email.trim() });
   };
+
+  const submitCheckout = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!name.trim() || !email.trim() || !password.trim()) {
+      setError("Please fill in all fields.");
+      return;
+    }
+    setError("");
+    if (country) setCurrencyCode(country.currency);
+    signIn({ name: name.trim(), email: email.trim() });
+  };
+
+  const plan = plans.find((p) => p.id === planId);
 
   return (
     <div className="signin-page">
-      <div className="signin-card">
+      <div className={`signin-card ${step === "pricing" ? "signin-card-wide" : ""}`}>
         <div className="signin-brand">
           <span className="brand-mark">NB</span>
           <span>NeraBooks</span>
         </div>
-        <h1 className="signin-title">{mode === "signin" ? "Sign in to your account" : "Create your account"}</h1>
-        <p className="signin-sub">
-          {mode === "signin" ? "Welcome back — enter your details to continue." : "Set up NeraBooks in a few seconds."}
-        </p>
 
-        <form onSubmit={submit} className="signin-form">
-          {mode === "signup" && (
-            <div>
-              <label>Full name</label>
-              <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Jane Doe" autoComplete="name" />
-            </div>
-          )}
-          <div>
-            <label>Email</label>
-            <input
-              type="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              placeholder="jane@company.com"
-              autoComplete="email"
+        {step === "signin" && (
+          <>
+            <h1 className="signin-title">Sign in to your account</h1>
+            <p className="signin-sub">Welcome back — enter your details to continue.</p>
+
+            <form onSubmit={submitSignIn} className="signin-form">
+              <div>
+                <label>Email</label>
+                <input
+                  type="email"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  placeholder="jane@company.com"
+                  autoComplete="email"
+                />
+              </div>
+              <div>
+                <label>Password</label>
+                <input
+                  type="password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  placeholder="••••••••"
+                  autoComplete="current-password"
+                />
+              </div>
+
+              {error && <div className="signin-error">{error}</div>}
+
+              <button type="submit" className="btn-primary signin-submit">
+                Sign in
+              </button>
+            </form>
+
+            <button
+              type="button"
+              className="btn-secondary signin-submit signin-register"
+              onClick={() => {
+                setError("");
+                setStep("country");
+              }}
+            >
+              Buy now
+            </button>
+
+            <p className="signin-note">This is a demo — any email &amp; password will work.</p>
+          </>
+        )}
+
+        {step === "country" && (
+          <>
+            <button type="button" className="signin-back" onClick={() => setStep("signin")}>
+              ← Back
+            </button>
+            <h1 className="signin-title">Pick your country</h1>
+            <p className="signin-sub">We'll show pricing in your local currency.</p>
+            <CountryPicker
+              onSelect={(c) => {
+                setCountry(c);
+                setStep("pricing");
+              }}
             />
-          </div>
-          <div>
-            <label>Password</label>
-            <input
-              type="password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              placeholder="••••••••"
-              autoComplete="current-password"
+          </>
+        )}
+
+        {step === "pricing" && country && (
+          <>
+            <button type="button" className="signin-back" onClick={() => setStep("country")}>
+              ← Back
+            </button>
+            <h1 className="signin-title">Choose your plan</h1>
+            <p className="signin-sub">Cancel anytime.</p>
+            <Pricing
+              country={country}
+              onChoosePlan={(id) => {
+                setPlanId(id);
+                setStep("checkout");
+              }}
             />
-          </div>
+          </>
+        )}
 
-          {error && <div className="signin-error">{error}</div>}
+        {step === "checkout" && country && plan && (
+          <>
+            <button type="button" className="signin-back" onClick={() => setStep("pricing")}>
+              ← Back
+            </button>
+            <h1 className="signin-title">Create your account</h1>
+            <p className="signin-sub">
+              {flagEmoji(country.code)} {plan.name} plan — {currency(convertFromUsd(plan.priceUsd, country.currency), country.currency)}/mo
+            </p>
 
-          <button type="submit" className="btn-primary signin-submit">
-            {mode === "signin" ? "Sign in" : "Create account"}
-          </button>
-        </form>
+            <form onSubmit={submitCheckout} className="signin-form">
+              <div>
+                <label>Full name</label>
+                <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Jane Doe" autoComplete="name" />
+              </div>
+              <div>
+                <label>Email</label>
+                <input
+                  type="email"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  placeholder="jane@company.com"
+                  autoComplete="email"
+                />
+              </div>
+              <div>
+                <label>Password</label>
+                <input
+                  type="password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  placeholder="••••••••"
+                  autoComplete="new-password"
+                />
+              </div>
 
-        <button
-          type="button"
-          className="btn-secondary signin-submit signin-register"
-          onClick={() => {
-            setError("");
-            setMode(mode === "signin" ? "signup" : "signin");
-          }}
-        >
-          {mode === "signin" ? "Register" : "Back to sign in"}
-        </button>
+              {error && <div className="signin-error">{error}</div>}
 
-        <p className="signin-note">This is a demo — any email &amp; password will work.</p>
+              <button type="submit" className="btn-primary signin-submit">
+                Start {plan.name} plan
+              </button>
+            </form>
+          </>
+        )}
       </div>
     </div>
   );
