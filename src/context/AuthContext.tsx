@@ -1,7 +1,7 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
 import type { PlanId } from "../lib/planLimits";
 
-const STORAGE_KEY = "nerabooks-auth";
+const STORAGE_KEY = "nerobooks-auth";
 
 export interface AuthUser {
   name: string;

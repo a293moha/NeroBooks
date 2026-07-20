@@ -1,7 +1,7 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
 import type { TeamMember } from "../types";
 
-const STORAGE_KEY = "nerabooks-team";
+const STORAGE_KEY = "nerobooks-team";
 
 interface TeamContextValue {
   invitees: TeamMember[];

@@ -9,7 +9,7 @@ import {
   seedVendors,
 } from "../lib/seed";
 
-const STORAGE_KEY = "nerabooks-data-v1";
+const STORAGE_KEY = "nerobooks-data-v1";
 
 interface StoreShape {
   customers: Customer[];

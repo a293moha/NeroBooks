@@ -18,7 +18,7 @@ export default function Billing() {
       <div className="page-header">
         <div>
           <h1 className="page-title">Billing</h1>
-          <p className="page-subtitle">Manage your NeraBooks subscription</p>
+          <p className="page-subtitle">Manage your NeroBooks subscription</p>
         </div>
       </div>
 

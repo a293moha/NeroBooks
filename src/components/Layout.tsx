@@ -80,7 +80,7 @@ export default function Layout() {
       <header className="app-header">
         <div className="brand">
           <span className="brand-mark">NB</span>
-          <span>NeraBooks</span>
+          <span>NeroBooks</span>
         </div>
         <div className="header-search">
           <div style={{ position: "relative" }}>

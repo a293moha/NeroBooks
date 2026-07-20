@@ -51,7 +51,7 @@ export default function SignIn() {
       <div className={`signin-card ${step === "pricing" ? "signin-card-wide" : ""}`}>
         <div className="signin-brand">
           <span className="brand-mark">NB</span>
-          <span>NeraBooks</span>
+          <span>NeroBooks</span>
         </div>
 
         {step === "signin" && (

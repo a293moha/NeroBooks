@@ -86,7 +86,7 @@ export default function Reports() {
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `nerabooks-${tab}-report.csv`;
+    a.download = `nerobooks-${tab}-report.csv`;
     a.click();
     URL.revokeObjectURL(url);
   };

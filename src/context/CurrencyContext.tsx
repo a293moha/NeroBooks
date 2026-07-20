@@ -1,7 +1,7 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
 import { currencies, type CurrencyOption } from "../lib/currencies";
 
-const STORAGE_KEY = "nerabooks-currency";
+const STORAGE_KEY = "nerobooks-currency";
 
 interface CurrencyContextValue {
   currencyCode: string;
