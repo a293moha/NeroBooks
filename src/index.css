@@ -412,6 +412,14 @@ th.cell-num {
   background: var(--status-critical);
 }
 
+.badge.recurring {
+  background: rgba(74, 58, 167, 0.12);
+  color: var(--series-violet);
+  margin-left: 8px;
+  font-size: 11px;
+  padding: 2px 8px;
+}
+
 /* ---------- Forms / modal ---------- */
 .modal-overlay {
   position: fixed;
@@ -888,7 +896,7 @@ textarea:focus {
 
 /* ---------- Buy-now flow: country + pricing steps ---------- */
 .signin-card-wide {
-  width: 720px;
+  width: 900px;
 }
 
 .signin-back {
@@ -931,7 +939,7 @@ textarea:focus {
 
 .pricing-grid {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: 1fr 1fr 1fr;
   gap: 18px;
 }
 
@@ -1077,4 +1085,119 @@ button:disabled {
   padding: 7px 14px;
   font-size: 13px;
   white-space: nowrap;
+}
+
+/* ---------- Feature comparison matrix ---------- */
+.feature-matrix {
+  margin-top: 8px;
+}
+
+.fm-header-row,
+.fm-row {
+  display: grid;
+  grid-template-columns: 1.6fr 1fr 1fr 1fr;
+  align-items: center;
+}
+
+.fm-header-row {
+  padding: 10px 16px;
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--text-muted);
+}
+
+.fm-header-plan {
+  text-align: center;
+}
+
+.fm-header-plan.fm-current {
+  color: var(--text-primary);
+}
+
+.fm-category {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  margin-bottom: 10px;
+  overflow: hidden;
+}
+
+.fm-category-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: var(--page-bg);
+  padding: 12px 16px;
+  font-weight: 700;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.fm-chevron {
+  color: var(--text-muted);
+  transition: transform 0.15s ease;
+}
+
+.fm-chevron.collapsed {
+  transform: rotate(-90deg);
+}
+
+.fm-rows {
+  background: var(--surface);
+}
+
+.fm-row {
+  padding: 10px 16px;
+  border-top: 1px solid var(--border);
+  font-size: 13.5px;
+}
+
+.fm-feature-name {
+  color: var(--text-secondary);
+}
+
+.fm-beta {
+  display: inline-block;
+  margin-left: 6px;
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--series-blue);
+  background: rgba(42, 120, 214, 0.12);
+  border-radius: 4px;
+  padding: 1px 5px;
+  vertical-align: middle;
+}
+
+.fm-cell {
+  text-align: center;
+}
+
+.fm-cell.fm-current {
+  background: var(--brand-yellow-light);
+  border-radius: 6px;
+  margin: -4px 0;
+  padding: 4px 0;
+}
+
+.fm-check {
+  color: var(--status-good);
+  font-weight: 700;
+}
+
+.fm-dash {
+  color: var(--text-muted);
+}
+
+.fm-value {
+  font-weight: 600;
+  font-size: 13px;
+}
+
+@media (max-width: 700px) {
+  .fm-header-row,
+  .fm-row {
+    grid-template-columns: 1.2fr 1fr 1fr 1fr;
+    font-size: 12px;
+  }
 }

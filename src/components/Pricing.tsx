@@ -2,13 +2,15 @@ import { plans } from "../lib/plans";
 import { convertFromUsd } from "../lib/exchangeRates";
 import { currency } from "../lib/format";
 import { flagEmoji, type Country } from "../lib/countries";
+import type { PlanId } from "../lib/featureMatrix";
+import FeatureMatrix from "./FeatureMatrix";
 
 export default function Pricing({
   country,
   onChoosePlan,
 }: {
   country: Country;
-  onChoosePlan: (planId: "starter" | "pro") => void;
+  onChoosePlan: (planId: PlanId) => void;
 }) {
   return (
     <div>
@@ -51,6 +53,11 @@ export default function Pricing({
           );
         })}
       </div>
+
+      <h3 className="card-title" style={{ marginTop: 28, marginBottom: 12 }}>
+        Compare every feature
+      </h3>
+      <FeatureMatrix />
     </div>
   );
 }

@@ -19,6 +19,7 @@ export default function Team() {
   const limits = planLimits[user.plan];
   const totalMembers = invitees.length + 1;
   const atCap = totalMembers >= limits.maxTeamMembers;
+  const isTopPlan = user.plan === "advanced";
 
   const submit = () => {
     if (!name.trim() || !email.trim() || atCap) return;
@@ -34,8 +35,7 @@ export default function Team() {
         <div>
           <h1 className="page-title">Team</h1>
           <p className="page-subtitle">
-            {totalMembers} of {limits.maxTeamMembers === Infinity ? "unlimited" : limits.maxTeamMembers} members ·{" "}
-            {limits.label} plan
+            {totalMembers} of {limits.maxTeamMembers} members · {limits.label} plan
           </p>
         </div>
         <button className="btn-new" onClick={() => setOpen(true)} disabled={atCap}>
@@ -44,8 +44,15 @@ export default function Team() {
         </button>
       </div>
 
-      {atCap && limits.maxTeamMembers !== Infinity && (
-        <UpgradeBanner message={`You've reached the ${limits.maxTeamMembers}-member limit on the Starter plan.`} />
+      {atCap && !isTopPlan && (
+        <UpgradeBanner
+          message={`You've reached the ${limits.maxTeamMembers}-member limit on the ${limits.label} plan.`}
+        />
+      )}
+      {atCap && isTopPlan && (
+        <div className="upgrade-banner" style={{ background: "var(--page-bg)", borderColor: "var(--border)" }}>
+          <span>You've reached the {limits.maxTeamMembers}-member limit on the Advanced plan.</span>
+        </div>
       )}
 
       <div className="table-card">

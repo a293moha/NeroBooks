@@ -31,8 +31,10 @@ export default function Invoices() {
   const [dueDate, setDueDate] = useState(in30Days());
   const [lineItems, setLineItems] = useState<InvoiceLineItem[]>([emptyLine()]);
   const [invoiceCurrency, setInvoiceCurrency] = useState(currencyCode);
+  const [recurring, setRecurring] = useState(false);
 
   const canUseMultiCurrency = user ? planLimits[user.plan].multiCurrencyInvoicing : false;
+  const canUseRecurring = user ? planLimits[user.plan].recurringInvoices : false;
 
   useEffect(() => {
     if (searchParams.get("new") === "1") {
@@ -58,6 +60,7 @@ export default function Invoices() {
     setDueDate(in30Days());
     setLineItems([emptyLine()]);
     setInvoiceCurrency(currencyCode);
+    setRecurring(false);
   };
 
   const submit = (status: Invoice["status"]) => {
@@ -72,6 +75,7 @@ export default function Invoices() {
       status,
       lineItems: lineItems.filter((l) => l.description.trim()),
       currency: canUseMultiCurrency && invoiceCurrency !== currencyCode ? invoiceCurrency : undefined,
+      recurring: canUseRecurring && recurring ? true : undefined,
     };
     addInvoice(invoice);
     reset();
@@ -125,7 +129,10 @@ export default function Invoices() {
             <tbody>
               {filtered.map((inv) => (
                 <tr key={inv.id}>
-                  <td>{inv.number}</td>
+                  <td>
+                    {inv.number}
+                    {inv.recurring && <span className="badge recurring">Recurring</span>}
+                  </td>
                   <td className="cell-muted">{customerName(inv.customerId)}</td>
                   <td className="cell-muted">{formatDate(inv.issueDate)}</td>
                   <td className="cell-muted">{formatDate(inv.dueDate)}</td>
@@ -193,7 +200,7 @@ export default function Invoices() {
           </div>
 
           {!canUseMultiCurrency && (
-            <UpgradeBanner message="Starter invoices always use your account currency. Upgrade to Pro to bill customers in any currency." />
+            <UpgradeBanner message="This plan bills in your account currency only. Upgrade to Plus to bill customers in any currency." />
           )}
           <div className="field-row">
             <div>
@@ -205,6 +212,22 @@ export default function Invoices() {
               <input type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} />
             </div>
           </div>
+
+          <div>
+            <label style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 0 }}>
+              <input
+                type="checkbox"
+                style={{ width: "auto" }}
+                checked={recurring}
+                disabled={!canUseRecurring}
+                onChange={(e) => setRecurring(e.target.checked)}
+              />
+              Make this a recurring invoice {!canUseRecurring && "🔒"}
+            </label>
+          </div>
+          {!canUseRecurring && (
+            <UpgradeBanner message="Recurring invoices are a Plus feature." />
+          )}
 
           <div>
             <label>Line items</label>

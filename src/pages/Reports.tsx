@@ -3,10 +3,24 @@ import { useData } from "../context/DataContext";
 import { useCurrency } from "../context/CurrencyContext";
 import { useAuth } from "../context/AuthContext";
 import { planLimits } from "../lib/planLimits";
+import { projectNextMonths } from "../lib/trend";
 import { currency } from "../lib/format";
 import UpgradeBanner from "../components/UpgradeBanner";
 
-type Tab = "pl" | "bs" | "cf";
+type Tab = "pl" | "bs" | "cf" | "budget" | "forecast";
+
+// Illustrative monthly budgets per expense category — not user-editable in this build.
+const monthlyBudgets: Record<string, number> = {
+  Software: 150,
+  Utilities: 220,
+  Travel: 100,
+  "Office Supplies": 120,
+  Rent: 0,
+  Advertising: 300,
+  Payroll: 0,
+  Insurance: 100,
+  Other: 80,
+};
 
 export default function Reports() {
   const { accounts, expenses } = useData();
@@ -16,8 +30,7 @@ export default function Reports() {
   const [tab, setTab] = useState<Tab>("pl");
 
   if (!user) return null;
-  const canUseAdvanced = planLimits[user.plan].advancedReports;
-  const canExport = planLimits[user.plan].exportReports;
+  const limits = planLimits[user.plan];
 
   const income = accounts.filter((a) => a.type === "Income");
   const expenseAccounts = accounts.filter((a) => a.type === "Expense");
@@ -43,8 +56,10 @@ export default function Reports() {
   const netChangeInCash = netIncome;
   const beginningCash = endingCash - netChangeInCash;
 
+  const forecast = projectNextMonths(3);
+
   const exportCsv = () => {
-    if (!canExport) return;
+    if (!limits.exportReports) return;
     let rows: string[][] = [];
     if (tab === "pl") {
       rows = [
@@ -70,7 +85,7 @@ export default function Reports() {
         ...equity.map((a) => [a.name, a.balance.toFixed(2)]),
         ["Total equity", totalEquity.toFixed(2)],
       ];
-    } else {
+    } else if (tab === "cf") {
       rows = [
         ["Cash Flow Statement"],
         ["Operating activities", netIncome.toFixed(2)],
@@ -80,6 +95,14 @@ export default function Reports() {
         ["Beginning cash", beginningCash.toFixed(2)],
         ["Ending cash", endingCash.toFixed(2)],
       ];
+    } else if (tab === "budget") {
+      rows = [
+        ["Budget vs Actual"],
+        ["Category", "Budget", "Actual"],
+        ...expenseByCategory.map(([name, value]) => [name, (monthlyBudgets[name] ?? 0).toFixed(2), value.toFixed(2)]),
+      ];
+    } else {
+      rows = [["Forecast (next 3 months)"], ["Month", "Income", "Expenses"], ...forecast.map((f) => [f.month, String(f.income), String(f.expenses)])];
     }
     const csv = rows.map((r) => r.map((cell) => `"${cell.replace(/"/g, '""')}"`).join(",")).join("\n");
     const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
@@ -91,40 +114,48 @@ export default function Reports() {
     URL.revokeObjectURL(url);
   };
 
+  const tabs: { key: Tab; label: string; locked: boolean }[] = [
+    { key: "pl", label: "Profit & Loss", locked: false },
+    { key: "bs", label: "Balance Sheet", locked: false },
+    { key: "cf", label: "Cash Flow", locked: !limits.cashFlowPlanning },
+    { key: "budget", label: "Budgeting", locked: !limits.budgeting },
+    { key: "forecast", label: "Forecast", locked: !limits.forecasting },
+  ];
+
+  const activeTab = tabs.find((t) => t.key === tab);
+
   return (
     <div>
       <div className="page-header">
         <div>
           <h1 className="page-title">Reports</h1>
-          <p className="page-subtitle">Year to date</p>
+          <p className="page-subtitle">
+            Year to date · {limits.reportsLevel} reports on the {limits.label} plan
+          </p>
         </div>
-        <button className={canExport ? "btn-secondary" : "btn-secondary"} onClick={exportCsv} disabled={!canExport}>
-          {canExport ? "Export CSV" : "🔒 Export CSV"}
+        <button className="btn-secondary" onClick={exportCsv} disabled={!limits.exportReports}>
+          {limits.exportReports ? "Export CSV" : "🔒 Data sync with Excel"}
         </button>
       </div>
 
       <div className="tab-row">
-        <div className={`tab-item ${tab === "pl" ? "active" : ""}`} onClick={() => setTab("pl")}>
-          Profit &amp; Loss
-        </div>
-        <div className={`tab-item ${tab === "bs" ? "active" : ""}`} onClick={() => setTab("bs")}>
-          Balance Sheet
-        </div>
-        <div
-          className={`tab-item ${tab === "cf" ? "active" : ""}`}
-          onClick={() => setTab("cf")}
-          title={canUseAdvanced ? undefined : "Pro feature"}
-        >
-          Cash Flow {!canUseAdvanced && "🔒"}
-        </div>
+        {tabs.map((t) => (
+          <div key={t.key} className={`tab-item ${tab === t.key ? "active" : ""}`} onClick={() => setTab(t.key)}>
+            {t.label} {t.locked && "🔒"}
+          </div>
+        ))}
       </div>
 
-      {tab === "cf" && !canUseAdvanced ? (
-        <UpgradeBanner message="Cash Flow statements are a Pro feature." />
+      {activeTab?.locked ? (
+        <UpgradeBanner
+          message={`${activeTab.label} is available on the ${
+            tab === "forecast" ? "Advanced" : "Plus"
+          } plan and above.`}
+        />
       ) : (
         <>
-          {!canExport && (
-            <UpgradeBanner message="Exporting reports to CSV is a Pro feature." />
+          {!limits.exportReports && (
+            <UpgradeBanner message="Exporting reports for Excel is an Advanced-plan feature." />
           )}
 
           {tab === "pl" && (
@@ -213,7 +244,7 @@ export default function Reports() {
             </div>
           )}
 
-          {tab === "cf" && canUseAdvanced && (
+          {tab === "cf" && (
             <div className="report-section">
               <h3 className="card-title">Cash Flow Statement</h3>
               <div className="report-line">
@@ -240,6 +271,44 @@ export default function Reports() {
                 <span>Ending cash</span>
                 <span>{fmt(endingCash)}</span>
               </div>
+            </div>
+          )}
+
+          {tab === "budget" && (
+            <div className="report-section">
+              <h3 className="card-title">Budget vs Actual — this month</h3>
+              {expenseByCategory.map(([name, value]) => {
+                const budget = monthlyBudgets[name] ?? 0;
+                const over = value > budget;
+                return (
+                  <div className="report-line" key={name}>
+                    <span>{name}</span>
+                    <span>
+                      {fmt(value)} <span className="cell-muted">/ {fmt(budget)} budgeted</span>{" "}
+                      <span style={{ color: over ? "var(--status-critical)" : "var(--status-good)", fontWeight: 700 }}>
+                        {over ? "Over" : "On track"}
+                      </span>
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
+          {tab === "forecast" && (
+            <div className="report-section">
+              <h3 className="card-title">Forecast — next 3 months</h3>
+              <p className="card-sub" style={{ marginBottom: 16 }}>
+                Naive projection based on the trailing 6-month trend. Not a predictive model.
+              </p>
+              {forecast.map((f) => (
+                <div className="report-line" key={f.month}>
+                  <span>{f.month}</span>
+                  <span>
+                    Income {fmt(f.income)} <span className="cell-muted">·</span> Expenses {fmt(f.expenses)}
+                  </span>
+                </div>
+              ))}
             </div>
           )}
         </>

@@ -14,16 +14,8 @@ import { useData } from "../context/DataContext";
 import { useCurrency } from "../context/CurrencyContext";
 import { convertAmount } from "../lib/exchangeRates";
 import { currency, invoiceTotal } from "../lib/format";
+import { monthlyTrend } from "../lib/trend";
 import StatusBadge from "../components/StatusBadge";
-
-const monthlyTrend = [
-  { month: "Feb", income: 14200, expenses: 4800 },
-  { month: "Mar", income: 15800, expenses: 5100 },
-  { month: "Apr", income: 13950, expenses: 4650 },
-  { month: "May", income: 17300, expenses: 5400 },
-  { month: "Jun", income: 19800, expenses: 5800 },
-  { month: "Jul", income: 22300, expenses: 5940 },
-];
 
 // Recharts sets these as raw SVG attributes, which cannot resolve CSS
 // custom properties — literal hex is required here (mirrors index.css vars).

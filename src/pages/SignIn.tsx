@@ -7,6 +7,7 @@ import { plans } from "../lib/plans";
 import { convertFromUsd } from "../lib/exchangeRates";
 import { currency } from "../lib/format";
 import { flagEmoji, type Country } from "../lib/countries";
+import type { PlanId } from "../lib/featureMatrix";
 
 type Step = "signin" | "country" | "pricing" | "checkout";
 
@@ -16,7 +17,7 @@ export default function SignIn() {
   const [step, setStep] = useState<Step>("signin");
 
   const [country, setCountry] = useState<Country | null>(null);
-  const [planId, setPlanId] = useState<"starter" | "pro" | null>(null);
+  const [planId, setPlanId] = useState<PlanId | null>(null);
 
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
@@ -30,7 +31,7 @@ export default function SignIn() {
       return;
     }
     setError("");
-    signIn({ name: email.split("@")[0], email: email.trim(), plan: "starter" });
+    signIn({ name: email.split("@")[0], email: email.trim(), plan: "easystart" });
   };
 
   const submitCheckout = (e: React.FormEvent) => {
@@ -41,7 +42,7 @@ export default function SignIn() {
     }
     setError("");
     if (country) setCurrencyCode(country.currency);
-    signIn({ name: name.trim(), email: email.trim(), plan: planId ?? "starter" });
+    signIn({ name: name.trim(), email: email.trim(), plan: planId ?? "easystart" });
   };
 
   const plan = plans.find((p) => p.id === planId);

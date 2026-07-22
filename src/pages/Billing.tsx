@@ -3,7 +3,8 @@ import { useCurrency } from "../context/CurrencyContext";
 import { plans } from "../lib/plans";
 import { convertFromUsd } from "../lib/exchangeRates";
 import { currency } from "../lib/format";
-import type { PlanId } from "../lib/planLimits";
+import type { PlanId } from "../lib/featureMatrix";
+import FeatureMatrix from "../components/FeatureMatrix";
 
 export default function Billing() {
   const { user, setPlan } = useAuth();
@@ -12,6 +13,7 @@ export default function Billing() {
   if (!user) return null;
 
   const choosePlan = (id: PlanId) => setPlan(id);
+  const currentIndex = plans.findIndex((p) => p.id === user.plan);
 
   return (
     <div>
@@ -23,9 +25,10 @@ export default function Billing() {
       </div>
 
       <div className="pricing-grid">
-        {plans.map((plan) => {
+        {plans.map((plan, i) => {
           const price = convertFromUsd(plan.priceUsd, currencyCode);
           const isCurrent = user.plan === plan.id;
+          const isUpgrade = i > currentIndex;
           return (
             <div key={plan.id} className={`pricing-card ${plan.highlight ? "highlight" : ""}`}>
               {isCurrent && <div className="pricing-badge pricing-badge-current">Current plan</div>}
@@ -40,7 +43,7 @@ export default function Billing() {
                 disabled={isCurrent}
                 onClick={() => choosePlan(plan.id)}
               >
-                {isCurrent ? "Current plan" : plan.id === "pro" ? "Upgrade to Pro" : "Switch to Starter"}
+                {isCurrent ? "Current plan" : isUpgrade ? `Upgrade to ${plan.name}` : `Switch to ${plan.name}`}
               </button>
               <ul className="pricing-features">
                 {plan.features.map((f) => (
@@ -58,6 +61,11 @@ export default function Billing() {
           );
         })}
       </div>
+
+      <h3 className="card-title" style={{ marginTop: 28, marginBottom: 12 }}>
+        Compare every feature
+      </h3>
+      <FeatureMatrix currentPlan={user.plan} />
     </div>
   );
 }

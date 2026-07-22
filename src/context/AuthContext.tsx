@@ -18,12 +18,16 @@ interface AuthContextValue {
 
 const AuthContext = createContext<AuthContextValue | null>(null);
 
+// Legacy plan ids from the earlier 2-tier Starter/Pro structure.
+const legacyPlanMap: Record<string, PlanId> = { starter: "easystart", pro: "advanced" };
+
 function loadInitial(): AuthUser | null {
   const raw = localStorage.getItem(STORAGE_KEY);
   if (!raw) return null;
   try {
     const parsed = JSON.parse(raw) as AuthUser;
-    return { ...parsed, plan: parsed.plan ?? "starter" };
+    const plan = legacyPlanMap[parsed.plan as unknown as string] ?? parsed.plan ?? "easystart";
+    return { ...parsed, plan };
   } catch {
     return null;
   }

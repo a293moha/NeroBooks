@@ -6,7 +6,7 @@ export default function UpgradeBanner({ message }: { message: string }) {
     <div className="upgrade-banner">
       <span>🔒 {message}</span>
       <button className="btn-primary upgrade-banner-btn" onClick={() => navigate("/billing")}>
-        Upgrade to Pro
+        View plans
       </button>
     </div>
   );

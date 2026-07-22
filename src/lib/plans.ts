@@ -1,5 +1,7 @@
+import type { PlanId } from "./featureMatrix";
+
 export interface Plan {
-  id: "starter" | "pro";
+  id: PlanId;
   name: string;
   tagline: string;
   priceUsd: number;
@@ -11,34 +13,50 @@ export interface Plan {
 
 export const plans: Plan[] = [
   {
-    id: "starter",
-    name: "Starter",
-    tagline: "For freelancers and small teams",
-    priceUsd: 15,
-    strikeUsd: 25,
+    id: "easystart",
+    name: "EasyStart",
+    tagline: "For solo founders just getting going",
+    priceUsd: 3,
+    strikeUsd: 30,
     features: [
-      "Up to 3 team members",
-      "Unlimited invoices & expenses",
-      "Core reports (P&L, Balance Sheet)",
-      "1 connected currency",
-      "Standard email support",
+      "1 user",
+      "Automated bookkeeping & bank feeds",
+      "Invoices, estimates & sales tax",
+      "Receipt capture & mileage tracking",
+      "Standard reports",
     ],
-    missing: ["Multi-currency invoicing", "Priority support"],
+    missing: ["Multiple currencies", "Recurring invoices", "Inventory & project tools"],
   },
   {
-    id: "pro",
-    name: "Pro",
-    tagline: "For growing businesses",
-    priceUsd: 35,
-    strikeUsd: 60,
+    id: "plus",
+    name: "Plus",
+    tagline: "For growing teams that bill and manage projects",
+    priceUsd: 11,
+    strikeUsd: 110,
     highlight: true,
     features: [
-      "Unlimited team members",
-      "Everything in Starter",
-      "Multi-currency invoicing",
-      "Advanced reports & exports",
-      "Priority support",
-      "Early access to new features",
+      "Up to 5 users",
+      "Everything in EasyStart",
+      "Multiple currencies & recurring invoices",
+      "Inventory, purchase & sales orders",
+      "Project management & time tracking",
+      "Budgeting & enhanced reports",
+    ],
+    missing: ["Forecasting", "Custom report builder", "Workflow automation"],
+  },
+  {
+    id: "advanced",
+    name: "Advanced",
+    tagline: "Built for scale",
+    priceUsd: 22,
+    strikeUsd: 220,
+    features: [
+      "Up to 25 users",
+      "Everything in Plus",
+      "Forecasting & custom report builder",
+      "Data sync with Excel",
+      "Workflow automation & batch invoicing",
+      "Custom roles, permissions & backup/restore",
     ],
   },
 ];

@@ -16,8 +16,10 @@ export interface Invoice {
   status: InvoiceStatus;
   lineItems: InvoiceLineItem[];
   notes?: string;
-  /** Pro-only: per-invoice currency override. Absent = account default currency. */
+  /** Plus/Advanced only: per-invoice currency override. Absent = account default currency. */
   currency?: string;
+  /** Plus/Advanced only: flags the invoice to recur. No auto-rebilling engine — display only. */
+  recurring?: boolean;
 }
 
 export interface TeamMember {
