@@ -9,6 +9,13 @@
 > Phase 0 items are marked `[DONE]` inline. **The frontend still isn't wired
 > to any of it** — that wiring is now the actual next step, not more backend
 > work in isolation.
+>
+> **Provider decisions made 2026-07-23** (none implemented yet — each needs a
+> real account/credential before work can start): **Auth0** for auth
+> (replacing the current hand-rolled bcrypt+JWT system, not extending it),
+> **Railway** for backend hosting, **Neon** for the production Postgres
+> database. Still open: file storage provider, email provider, payroll
+> jurisdiction (explicitly deferred — "not needed yet").
 
 This proposes an architecture and phased plan to turn NeroBooks from a
 localStorage-only demo into a real multi-user product. It assumes nothing
