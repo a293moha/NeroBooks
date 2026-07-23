@@ -1,5 +1,4 @@
 import express from "express";
-import cookieParser from "cookie-parser";
 import cors from "cors";
 import { config } from "./config.js";
 import { authRouter } from "./routes/auth.routes.js";
@@ -18,9 +17,10 @@ import { errorHandler } from "./middleware/errorHandler.js";
 export function createApp() {
   const app = express();
 
-  app.use(cors({ origin: config.corsOrigin, credentials: true }));
+  // Auth is a Bearer access token (Auth0), not a cookie, so credentials:
+  // true / cookie-parser are no longer needed here at all.
+  app.use(cors({ origin: config.corsOrigins }));
   app.use(express.json());
-  app.use(cookieParser());
 
   app.get("/health", (_req, res) => res.json({ ok: true }));
 

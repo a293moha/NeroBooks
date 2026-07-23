@@ -4,6 +4,7 @@ import multer from "multer";
 import { withTenantContext } from "../db/context.js";
 import { requireAuth, requireCompanyAccess } from "../auth/middleware.js";
 import { recordAuditEntry } from "../services/auditService.js";
+import { createCompanyWithOwner } from "../services/companyService.js";
 import { saveCompanyFile, readCompanyFile } from "../storage/localAdapter.js";
 import { asyncHandler } from "../middleware/asyncHandler.js";
 
@@ -33,40 +34,21 @@ companiesRouter.post("/", asyncHandler(async (req, res) => {
   const companyId = randomUUID();
 
   const company = await withTenantContext({ userId: req.userId!, companyId }, async (client) => {
-    // No RETURNING on this INSERT: Postgres re-checks the table's SELECT
-    // policy against a RETURNING clause's result row, and at this point no
-    // company_memberships row exists yet to satisfy companies_select's
-    // membership check — that row is only created a few statements below,
-    // in the same transaction. Insert first, create the owner membership,
-    // *then* SELECT the row back (by which point the membership exists and
-    // the SELECT policy passes normally).
-    await client.query(
-      `INSERT INTO companies (id, name, legal_name, default_currency, timezone, country_code)
-       VALUES ($1, $2, $3, $4, $5, $6)`,
-      [
-        companyId,
-        name.trim(),
-        typeof legalName === "string" ? legalName.trim() : null,
-        typeof defaultCurrency === "string" ? defaultCurrency.toUpperCase() : "USD",
-        typeof timezone === "string" ? timezone : "UTC",
-        typeof countryCode === "string" ? countryCode.toUpperCase() : null,
-      ]
-    );
+    await createCompanyWithOwner(client, {
+      companyId,
+      ownerUserId: req.userId!,
+      name: name.trim(),
+      legalName: typeof legalName === "string" ? legalName.trim() : null,
+      defaultCurrency: typeof defaultCurrency === "string" ? defaultCurrency.toUpperCase() : undefined,
+      timezone: typeof timezone === "string" ? timezone : undefined,
+      countryCode: typeof countryCode === "string" ? countryCode.toUpperCase() : null,
+    });
 
-    await client.query("INSERT INTO company_settings (company_id) VALUES ($1)", [companyId]);
-
-    await client.query(
-      `INSERT INTO company_memberships (company_id, user_id, invited_email, status, accepted_at)
-       SELECT $1, $2, email, 'active', now() FROM users WHERE id = $2`,
-      [companyId, req.userId]
-    );
-
-    await client.query(
-      `INSERT INTO user_roles (company_id, user_id, role_id)
-       SELECT $1, $2, id FROM roles WHERE name = 'Owner' AND company_id IS NULL`,
-      [companyId, req.userId]
-    );
-
+    // No RETURNING inside createCompanyWithOwner: Postgres re-checks the
+    // companies table's SELECT policy against a RETURNING clause's result
+    // row, and no company_memberships row exists until that function's
+    // last statement runs — so this SELECT happens only now, after the
+    // membership exists and the SELECT policy passes normally.
     const companyResult = await client.query(
       `SELECT id, name, legal_name, default_currency, timezone, country_code, created_at
        FROM companies WHERE id = $1`,

@@ -55,8 +55,14 @@ const navGroups = [
   },
 ];
 
+const platformNavGroup = {
+  label: "Platform",
+  items: [{ to: "/admin", label: "Admin", icon: TeamIcon }],
+};
+
 export default function Layout() {
   const { user } = useAuth();
+  const groups = user?.isPlatformAdmin ? [...navGroups, platformNavGroup] : navGroups;
   const [newMenuOpen, setNewMenuOpen] = useState(false);
   const [userMenuOpen, setUserMenuOpen] = useState(false);
   const newMenuRef = useRef<HTMLDivElement>(null);
@@ -113,7 +119,7 @@ export default function Layout() {
         </div>
       </header>
       <nav className="sidebar">
-        {navGroups.map((group) => (
+        {groups.map((group) => (
           <div key={group.label}>
             <div className="nav-section-label">{group.label}</div>
             {group.items.map((item) => (

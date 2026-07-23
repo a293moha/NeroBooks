@@ -1,8 +1,8 @@
-import type { Request, Response } from "express";
+import type { Request, Response, NextFunction } from "express";
+import { auth as authenticateJwt } from "express-oauth2-jwt-bearer";
 import { pool } from "../db/pool.js";
 import { withTenantContext } from "../db/context.js";
 import { config } from "../config.js";
-import { verifySession } from "./jwt.js";
 import { asyncHandler } from "../middleware/asyncHandler.js";
 
 /**
@@ -20,33 +20,151 @@ function denyAccess(res: Response): void {
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /**
- * Verifies the session cookie and attaches req.userId. Also re-reads the
- * user's status and is_platform_admin flag from the database on every
- * request (not just decoded from the token) — a suspended/deactivated
- * account loses access immediately, without waiting for its token to
- * expire.
- *
- * Wrapped in asyncHandler: this is Express middleware, not just a route
- * handler, and the same "Express 4 doesn't catch async rejections"
- * problem applies to middleware too — a DB error in here must reach
- * errorHandler.ts, not hang the request.
+ * Verifies the Auth0 access token's signature, issuer, audience, and
+ * expiry. In every environment except test, this fetches Auth0's real JWKS
+ * over HTTPS (cached by the library) and checks against it. In test mode,
+ * it trusts a local, freshly-generated keypair instead (see testJwks.ts) so
+ * the suite never depends on network access or a real Auth0 tenant, while
+ * still exercising this exact verification code path.
  */
-export const requireAuth = asyncHandler(async (req: Request, res: Response, next) => {
-  const token = req.cookies?.[config.cookieName];
-  const session = typeof token === "string" ? verifySession(token) : null;
+const checkJwt =
+  config.nodeEnv === "test"
+    ? await (async () => {
+        const { TEST_ISSUER, testJwk } = await import("./testJwks.js");
+        return authenticateJwt({
+          issuer: TEST_ISSUER,
+          audience: config.auth0Audience,
+          publicKey: { keys: [testJwk] },
+          tokenSigningAlg: "RS256",
+        });
+      })()
+    : authenticateJwt({
+        issuerBaseURL: `https://${config.auth0Domain}/`,
+        audience: config.auth0Audience,
+      });
 
-  if (!session) {
+function runCheckJwt(req: Request, res: Response): Promise<void> {
+  return new Promise((resolve, reject) => {
+    checkJwt(req, res, (err?: unknown) => (err ? reject(err) : resolve()));
+  });
+}
+
+interface Auth0UserInfo {
+  sub: string;
+  email?: string;
+  email_verified?: boolean;
+  name?: string;
+}
+
+async function fetchAuth0UserInfo(accessToken: string): Promise<Auth0UserInfo> {
+  const response = await fetch(`https://${config.auth0Domain}/userinfo`, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  if (!response.ok) {
+    throw new Error(`Auth0 /userinfo request failed with status ${response.status}`);
+  }
+  return (await response.json()) as Auth0UserInfo;
+}
+
+interface ProvisionedUser {
+  id: string;
+  status: string;
+  is_platform_admin: boolean;
+}
+
+/**
+ * The first time a given Auth0 identity (its "sub" claim) is seen, this
+ * creates — or, if a pre-existing row happens to share the same email,
+ * links to — a row in our own `users` table. Every other table
+ * (company_memberships, RLS policies, audit logs, ...) keys off
+ * `users.id`, never off Auth0's sub directly, so this is the one place
+ * that translates a verified external identity into an internal one.
+ *
+ * Access tokens scoped to a custom API audience don't carry email/name by
+ * default, so this calls Auth0's standard /userinfo endpoint (using the
+ * same bearer token that was already verified by checkJwt) to get them —
+ * ordinary OIDC, no extra Auth0 dashboard configuration required.
+ */
+async function provisionOrLinkUser(sub: string, accessToken: string): Promise<ProvisionedUser> {
+  const info = await fetchAuth0UserInfo(accessToken);
+  if (!info.email) {
+    throw new Error("Auth0 /userinfo response did not include an email claim");
+  }
+
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+
+    const existing = await client.query<ProvisionedUser & { auth0_sub: string | null }>(
+      "SELECT id, status, is_platform_admin, auth0_sub FROM users WHERE email = $1 AND deleted_at IS NULL FOR UPDATE",
+      [info.email]
+    );
+    let row = existing.rows[0];
+
+    if (row && row.auth0_sub && row.auth0_sub !== sub) {
+      throw new Error(`Email ${info.email} is already linked to a different Auth0 identity`);
+    }
+
+    if (row && !row.auth0_sub) {
+      await client.query(
+        "UPDATE users SET auth0_sub = $1, email_verified_at = COALESCE(email_verified_at, $2) WHERE id = $3",
+        [sub, info.email_verified ? new Date() : null, row.id]
+      );
+    } else if (!row) {
+      const inserted = await client.query<ProvisionedUser>(
+        `INSERT INTO users (email, auth0_sub, status, email_verified_at)
+         VALUES ($1, $2, 'active', $3)
+         RETURNING id, status, is_platform_admin`,
+        [info.email, sub, info.email_verified ? new Date() : null]
+      );
+      row = { ...inserted.rows[0], auth0_sub: sub };
+      await client.query("INSERT INTO user_profiles (user_id, full_name) VALUES ($1, $2)", [
+        row.id,
+        info.name?.trim() || info.email.split("@")[0],
+      ]);
+    }
+
+    await client.query("COMMIT");
+    return { id: row!.id, status: row!.status, is_platform_admin: row!.is_platform_admin };
+  } catch (err) {
+    await client.query("ROLLBACK");
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
+/**
+ * Verifies the Auth0 access token, then resolves it to an internal
+ * users.id — provisioning a new row on first sight of a given Auth0
+ * identity. Also re-checks the user's status and is_platform_admin flag
+ * from the database on every request (never just from the token), so a
+ * suspended/deactivated account loses access immediately.
+ */
+export const requireAuth = asyncHandler(async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    await runCheckJwt(req, res);
+  } catch {
     res.status(401).json({ error: "Not authenticated." });
     return;
   }
 
-  const result = await pool.query<{ id: string; status: string; is_platform_admin: boolean }>(
-    "SELECT id, status, is_platform_admin FROM users WHERE id = $1 AND deleted_at IS NULL",
-    [session.userId]
-  );
-  const user = result.rows[0];
+  const sub = req.auth?.payload.sub;
+  const authHeader = req.headers.authorization;
+  const accessToken = authHeader?.startsWith("Bearer ") ? authHeader.slice(7) : null;
+  if (!sub || !accessToken) {
+    res.status(401).json({ error: "Not authenticated." });
+    return;
+  }
 
-  if (!user || user.status !== "active") {
+  const byExistingSub = await pool.query<ProvisionedUser>(
+    "SELECT id, status, is_platform_admin FROM users WHERE auth0_sub = $1 AND deleted_at IS NULL",
+    [sub]
+  );
+
+  const user = byExistingSub.rows[0] ?? (await provisionOrLinkUser(sub, accessToken));
+
+  if (user.status !== "active") {
     res.status(401).json({ error: "Not authenticated." });
     return;
   }
@@ -71,7 +189,7 @@ export const requireAuth = asyncHandler(async (req: Request, res: Response, next
  * doesn't exist at all all produce the exact same 403 response — see
  * denyAccess() above.
  */
-export const requireCompanyAccess = asyncHandler(async (req: Request, res: Response, next) => {
+export const requireCompanyAccess = asyncHandler(async (req: Request, res: Response, next: NextFunction) => {
   const requestedCompanyId = req.params.companyId;
 
   if (!requestedCompanyId || !UUID_RE.test(requestedCompanyId)) {

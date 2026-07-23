@@ -1,5 +1,20 @@
 # NeroBooks — Database Requirements
 
+> **2026-07-23 update:** this document is the original *requirements*
+> derivation from the frontend's data model (kept as-is below for that
+> reasoning). The schema that actually got **built and migrated** is
+> broader — it also covers payroll, RBAC, and audit logging, which weren't
+> in scope when this doc was written — and uses different names in a few
+> places: `organizations` → `companies`, `memberships` →
+> `company_memberships`, `ledger_transactions` → `journal_entries` /
+> `journal_entry_lines`. See `docs/database-schema.md` for the authoritative,
+> as-built schema (`db/migrations/0001`–`0018`) and
+> `docs/multi-tenant-security.md` for how tenant isolation is actually
+> enforced (RLS, not just "consider it as a backstop" — see this doc's own
+> closing section below). Where the two disagree, `database-schema.md` wins;
+> this document remains useful for the *reasoning* behind what each table is
+> for and how it maps to the still-unconnected frontend.
+
 This derives a relational schema from what `src/types.ts` and the `context/`
 providers already model, plus the tables that don't exist in the frontend at
 all today but are required the moment there's more than one browser sharing
