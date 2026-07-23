@@ -1,0 +1,6 @@
+-- Rollback for 0015_app_role_and_grants
+ALTER DEFAULT PRIVILEGES IN SCHEMA public
+  REVOKE SELECT, INSERT, UPDATE, DELETE ON TABLES FROM nerobooks_app;
+REVOKE ALL PRIVILEGES ON ALL TABLES IN SCHEMA public FROM nerobooks_app;
+REVOKE USAGE ON SCHEMA public FROM nerobooks_app;
+DROP ROLE IF EXISTS nerobooks_app;
