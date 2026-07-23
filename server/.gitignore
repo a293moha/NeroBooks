@@ -1,0 +1,8 @@
+node_modules
+dist
+.env
+.env.test
+storage-data/*
+!storage-data/.gitkeep
+storage-data-test/
+*.log
