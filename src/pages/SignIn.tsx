@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useAuth0 } from "@auth0/auth0-react";
 import { useAuth } from "../context/AuthContext";
 import { useCurrency } from "../context/CurrencyContext";
 import CountryPicker from "../components/CountryPicker";
@@ -12,40 +13,25 @@ import type { PlanId } from "../lib/featureMatrix";
 type Step = "signin" | "country" | "pricing" | "checkout";
 
 export default function SignIn() {
-  const { signIn } = useAuth();
+  const { loginWithRedirect } = useAuth0();
+  const { setPlan } = useAuth();
   const { setCurrencyCode } = useCurrency();
   const [step, setStep] = useState<Step>("signin");
 
   const [country, setCountry] = useState<Country | null>(null);
   const [planId, setPlanId] = useState<PlanId | null>(null);
 
-  const [name, setName] = useState("");
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [error, setError] = useState("");
-
-  const submitSignIn = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!email.trim() || !password.trim()) {
-      setError("Please fill in all fields.");
-      return;
-    }
-    setError("");
-    signIn({ name: email.split("@")[0], email: email.trim(), plan: "easystart" });
-  };
-
-  const submitCheckout = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!name.trim() || !email.trim() || !password.trim()) {
-      setError("Please fill in all fields.");
-      return;
-    }
-    setError("");
-    if (country) setCurrencyCode(country.currency);
-    signIn({ name: name.trim(), email: email.trim(), plan: planId ?? "easystart" });
-  };
-
   const plan = plans.find((p) => p.id === planId);
+
+  // The chosen plan/currency are applied locally (they're preview-only
+  // preferences, not identity) before handing off to Auth0's own hosted
+  // signup page — real account creation, including the password itself,
+  // happens there, never in this app's own form.
+  const startCheckout = () => {
+    if (country) setCurrencyCode(country.currency);
+    if (planId) setPlan(planId);
+    loginWithRedirect({ authorizationParams: { screen_hint: "signup" } });
+  };
 
   return (
     <div className="signin-page">
@@ -58,49 +44,19 @@ export default function SignIn() {
         {step === "signin" && (
           <>
             <h1 className="signin-title">Sign in to your account</h1>
-            <p className="signin-sub">Welcome back — enter your details to continue.</p>
+            <p className="signin-sub">Welcome back — sign in to continue.</p>
 
-            <form onSubmit={submitSignIn} className="signin-form">
-              <div>
-                <label>Email</label>
-                <input
-                  type="email"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  placeholder="jane@company.com"
-                  autoComplete="email"
-                />
-              </div>
-              <div>
-                <label>Password</label>
-                <input
-                  type="password"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  placeholder="••••••••"
-                  autoComplete="current-password"
-                />
-              </div>
-
-              {error && <div className="signin-error">{error}</div>}
-
-              <button type="submit" className="btn-primary signin-submit">
-                Sign in
-              </button>
-            </form>
+            <button type="button" className="btn-primary signin-submit" onClick={() => loginWithRedirect()}>
+              Sign in
+            </button>
 
             <button
               type="button"
               className="btn-secondary signin-submit signin-register"
-              onClick={() => {
-                setError("");
-                setStep("country");
-              }}
+              onClick={() => setStep("country")}
             >
               Buy now
             </button>
-
-            <p className="signin-note">This is a demo — any email &amp; password will work.</p>
           </>
         )}
 
@@ -146,39 +102,11 @@ export default function SignIn() {
             <p className="signin-sub">
               {flagEmoji(country.code)} {plan.name} plan — {currency(convertFromUsd(plan.priceUsd, country.currency), country.currency)}/mo
             </p>
+            <p className="signin-sub">You'll create your login on the next screen.</p>
 
-            <form onSubmit={submitCheckout} className="signin-form">
-              <div>
-                <label>Full name</label>
-                <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Jane Doe" autoComplete="name" />
-              </div>
-              <div>
-                <label>Email</label>
-                <input
-                  type="email"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  placeholder="jane@company.com"
-                  autoComplete="email"
-                />
-              </div>
-              <div>
-                <label>Password</label>
-                <input
-                  type="password"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  placeholder="••••••••"
-                  autoComplete="new-password"
-                />
-              </div>
-
-              {error && <div className="signin-error">{error}</div>}
-
-              <button type="submit" className="btn-primary signin-submit">
-                Start {plan.name} plan
-              </button>
-            </form>
+            <button type="button" className="btn-primary signin-submit" onClick={startCheckout}>
+              Continue to create your account
+            </button>
           </>
         )}
       </div>

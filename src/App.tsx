@@ -1,4 +1,5 @@
 import { HashRouter, Route, Routes } from "react-router-dom";
+import { Auth0Provider } from "@auth0/auth0-react";
 import Layout from "./components/Layout";
 import { AuthProvider, useAuth } from "./context/AuthContext";
 import { CurrencyProvider } from "./context/CurrencyContext";
@@ -15,10 +16,12 @@ import Transactions from "./pages/Transactions";
 import Reports from "./pages/Reports";
 import Team from "./pages/Team";
 import Billing from "./pages/Billing";
+import Admin from "./pages/Admin";
 
 function AuthGate() {
-  const { user } = useAuth();
+  const { user, isLoading } = useAuth();
 
+  if (isLoading) return <div className="app-loading">Loading…</div>;
   if (!user) return <SignIn />;
 
   return (
@@ -34,24 +37,41 @@ function AuthGate() {
         <Route path="reports" element={<Reports />} />
         <Route path="team" element={<Team />} />
         <Route path="billing" element={<Billing />} />
+        {user.isPlatformAdmin && <Route path="admin" element={<Admin />} />}
       </Route>
     </Routes>
   );
 }
 
 function App() {
+  // Computed at runtime, not hardcoded: this app is served from more than
+  // one origin/base path at once (a custom domain at "/", GitHub Pages at
+  // "/NeroBooks/"), and Auth0 needs to redirect back to whichever one the
+  // user actually started from. import.meta.env.BASE_URL already carries
+  // the right path for either target (see vite.config.ts).
+  const redirectUri = `${window.location.origin}${import.meta.env.BASE_URL}`;
+
   return (
-    <AuthProvider>
-      <CurrencyProvider>
-        <DataProvider>
-          <TeamProvider>
-            <HashRouter>
-              <AuthGate />
-            </HashRouter>
-          </TeamProvider>
-        </DataProvider>
-      </CurrencyProvider>
-    </AuthProvider>
+    <Auth0Provider
+      domain={import.meta.env.VITE_AUTH0_DOMAIN}
+      clientId={import.meta.env.VITE_AUTH0_CLIENT_ID}
+      authorizationParams={{
+        redirect_uri: redirectUri,
+        audience: import.meta.env.VITE_AUTH0_AUDIENCE,
+      }}
+    >
+      <AuthProvider>
+        <CurrencyProvider>
+          <DataProvider>
+            <TeamProvider>
+              <HashRouter>
+                <AuthGate />
+              </HashRouter>
+            </TeamProvider>
+          </DataProvider>
+        </CurrencyProvider>
+      </AuthProvider>
+    </Auth0Provider>
   );
 }
 

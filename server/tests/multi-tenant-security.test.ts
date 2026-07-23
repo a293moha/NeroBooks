@@ -1,9 +1,12 @@
+import { randomUUID } from "node:crypto";
 import { test, before, after } from "node:test";
 import assert from "node:assert/strict";
 import request from "supertest";
 import { createApp } from "../src/app.js";
 import { pool } from "../src/db/pool.js";
 import { withTenantContext } from "../src/db/context.js";
+import { config } from "../src/config.js";
+import { signTestAccessToken } from "../src/auth/testJwks.js";
 
 /**
  * Every test in this file follows the same shape: set up two independent
@@ -18,6 +21,18 @@ import { withTenantContext } from "../src/db/context.js";
  * company at all" — a passing run here is evidence that a real attacker
  * cannot distinguish "wrong company" from "record doesn't exist" from
  * "company doesn't exist," which is the whole point.
+ *
+ * Authentication here is a locally-signed test access token (see
+ * ../src/auth/testJwks.ts) rather than a real Auth0 login — this exercises
+ * the exact same signature/issuer/audience verification code path as
+ * production (auth/middleware.ts's checkJwt), just against a local test
+ * keypair instead of a real Auth0 tenant, so the suite stays fully offline
+ * and deterministic. Each test identity's `users` row is inserted directly
+ * (users/user_profiles have no row-level security — see
+ * db/migrations/0017) with its auth0_sub pre-set to match the token's
+ * `sub` claim, so requireAuth's JIT-provisioning path (which would
+ * otherwise call Auth0's real /userinfo endpoint) never triggers here;
+ * that provisioning path has its own dedicated test below instead.
  */
 
 const app = createApp();
@@ -25,6 +40,8 @@ const app = createApp();
 interface Fixture {
   userAId: string;
   userBId: string;
+  tokenA: string;
+  tokenB: string;
   companyAId: string;
   companyBId: string;
   employeeAId: string;
@@ -38,8 +55,26 @@ interface Fixture {
 }
 
 let fx: Fixture;
-let agentA: ReturnType<typeof request.agent>;
-let agentB: ReturnType<typeof request.agent>;
+
+async function createTestIdentity(email: string, fullName: string): Promise<{ userId: string; token: string }> {
+  const sub = `auth0|test-${randomUUID()}`;
+  const inserted = await pool.query<{ id: string }>(
+    `INSERT INTO users (email, auth0_sub, status, email_verified_at)
+     VALUES ($1, $2, 'active', now()) RETURNING id`,
+    [email, sub]
+  );
+  const userId = inserted.rows[0].id;
+  await pool.query("INSERT INTO user_profiles (user_id, full_name) VALUES ($1, $2)", [userId, fullName]);
+  return { userId, token: signTestAccessToken(sub, config.auth0Audience) };
+}
+
+function authed(token: string) {
+  return {
+    get: (url: string) => request(app).get(url).set("Authorization", `Bearer ${token}`),
+    post: (url: string) => request(app).post(url).set("Authorization", `Bearer ${token}`),
+    patch: (url: string) => request(app).patch(url).set("Authorization", `Bearer ${token}`),
+  };
+}
 
 async function seedCompanyData(userId: string, companyId: string) {
   return withTenantContext({ userId, companyId }, async (client) => {
@@ -75,24 +110,11 @@ async function seedCompanyData(userId: string, companyId: string) {
 }
 
 before(async () => {
-  agentA = request.agent(app);
-  agentB = request.agent(app);
-
   const stamp = Date.now();
-  const emailA = `owner-a-${stamp}@example.com`;
-  const emailB = `owner-b-${stamp}@example.com`;
-
-  const signupA = await agentA
-    .post("/api/auth/signup")
-    .send({ email: emailA, password: "password123", fullName: "Owner A" });
-  assert.equal(signupA.status, 201);
-  const userAId = signupA.body.id as string;
-
-  const signupB = await agentB
-    .post("/api/auth/signup")
-    .send({ email: emailB, password: "password123", fullName: "Owner B" });
-  assert.equal(signupB.status, 201);
-  const userBId = signupB.body.id as string;
+  const ownerA = await createTestIdentity(`owner-a-${stamp}@example.com`, "Owner A");
+  const ownerB = await createTestIdentity(`owner-b-${stamp}@example.com`, "Owner B");
+  const agentA = authed(ownerA.token);
+  const agentB = authed(ownerB.token);
 
   const createA = await agentA.post("/api/companies").send({ name: "Attack Test Co A" });
   assert.equal(createA.status, 201);
@@ -102,8 +124,8 @@ before(async () => {
   assert.equal(createB.status, 201);
   const companyBId = createB.body.id as string;
 
-  const seededA = await seedCompanyData(userAId, companyAId);
-  const seededB = await seedCompanyData(userBId, companyBId);
+  const seededA = await seedCompanyData(ownerA.userId, companyAId);
+  const seededB = await seedCompanyData(ownerB.userId, companyBId);
 
   const uploadA = await agentA
     .post(`/api/companies/${companyAId}/documents`)
@@ -116,8 +138,10 @@ before(async () => {
   assert.equal(uploadB.status, 201);
 
   fx = {
-    userAId,
-    userBId,
+    userAId: ownerA.userId,
+    userBId: ownerB.userId,
+    tokenA: ownerA.token,
+    tokenB: ownerB.token,
     companyAId,
     companyBId,
     employeeAId: seededA.employeeId,
@@ -140,18 +164,18 @@ after(async () => {
 // it could just mean everything is broken, not that isolation works.)
 
 test("positive control: User A can read their own employee", async () => {
-  const res = await agentA.get(`/api/companies/${fx.companyAId}/employees/${fx.employeeAId}`);
+  const res = await authed(fx.tokenA).get(`/api/companies/${fx.companyAId}/employees/${fx.employeeAId}`);
   assert.equal(res.status, 200);
   assert.equal(res.body.first_name, "Secret");
 });
 
 test("positive control: User A can read their own invoice", async () => {
-  const res = await agentA.get(`/api/companies/${fx.companyAId}/invoices/${fx.invoiceAId}`);
+  const res = await authed(fx.tokenA).get(`/api/companies/${fx.companyAId}/invoices/${fx.invoiceAId}`);
   assert.equal(res.status, 200);
 });
 
 test("positive control: User A can download their own document", async () => {
-  const res = await agentA.get(`/api/companies/${fx.companyAId}/documents/${fx.documentAId}`);
+  const res = await authed(fx.tokenA).get(`/api/companies/${fx.companyAId}/documents/${fx.documentAId}`);
   assert.equal(res.status, 200);
   assert.equal(res.text, "company A confidential contents");
 });
@@ -159,13 +183,13 @@ test("positive control: User A can download their own document", async () => {
 // ---------- Attack 1: Read another company's employees ----------
 
 test("attack: read another company's employee list is denied", async () => {
-  const res = await agentA.get(`/api/companies/${fx.companyBId}/employees`);
+  const res = await authed(fx.tokenA).get(`/api/companies/${fx.companyBId}/employees`);
   assert.equal(res.status, 403);
   assert.deepEqual(res.body, { error: "Access denied." });
 });
 
 test("attack: read another company's specific employee by its real id is denied", async () => {
-  const res = await agentA.get(`/api/companies/${fx.companyBId}/employees/${fx.employeeBId}`);
+  const res = await authed(fx.tokenA).get(`/api/companies/${fx.companyBId}/employees/${fx.employeeBId}`);
   assert.equal(res.status, 403);
   assert.deepEqual(res.body, { error: "Access denied." });
 });
@@ -173,7 +197,7 @@ test("attack: read another company's specific employee by its real id is denied"
 // ---------- Attack 2: Edit another company's payroll ----------
 
 test("attack: editing another company's payroll run is denied", async () => {
-  const res = await agentA
+  const res = await authed(fx.tokenA)
     .patch(`/api/companies/${fx.companyBId}/payroll-runs/${fx.payrollRunBId}`)
     .send({ status: "approved" });
   assert.equal(res.status, 403);
@@ -190,7 +214,7 @@ test("attack: editing another company's payroll run is denied", async () => {
 // ---------- Attack 3: Download another company's files ----------
 
 test("attack: downloading another company's file is denied", async () => {
-  const res = await agentA.get(`/api/companies/${fx.companyBId}/documents/${fx.documentBId}`);
+  const res = await authed(fx.tokenA).get(`/api/companies/${fx.companyBId}/documents/${fx.documentBId}`);
   assert.equal(res.status, 403);
   assert.deepEqual(res.body, { error: "Access denied." });
 });
@@ -198,7 +222,7 @@ test("attack: downloading another company's file is denied", async () => {
 // ---------- Attack 4: Access another company's invoices ----------
 
 test("attack: reading another company's invoice is denied", async () => {
-  const res = await agentA.get(`/api/companies/${fx.companyBId}/invoices/${fx.invoiceBId}`);
+  const res = await authed(fx.tokenA).get(`/api/companies/${fx.companyBId}/invoices/${fx.invoiceBId}`);
   assert.equal(res.status, 403);
   assert.deepEqual(res.body, { error: "Access denied." });
 });
@@ -211,7 +235,7 @@ test("attack: a companyId smuggled into the request body is ignored, not honored
   // server only ever reads company id from the URL param after verifying
   // it via requireCompanyAccess — req.companyId, not req.body — so this
   // field is simply not read for that purpose anywhere in the codebase.
-  const res = await agentA
+  const res = await authed(fx.tokenA)
     .patch(`/api/companies/${fx.companyAId}/settings`)
     .send({ companyId: fx.companyBId, invoiceNumberPrefix: "HACKED-" });
   assert.equal(res.status, 200);
@@ -228,7 +252,7 @@ test("attack: a companyId smuggled into the request body is ignored, not honored
 });
 
 test("attack: a companyId smuggled into a custom header is ignored", async () => {
-  const res = await agentA
+  const res = await authed(fx.tokenA)
     .get(`/api/companies/${fx.companyAId}/employees`)
     .set("X-Company-Id", fx.companyBId);
   // Still scoped to Company A (from the URL) — the header has no code path
@@ -246,25 +270,27 @@ test("attack: a real employee id from another company, addressed via MY OWN comp
   // belongs to Company B. This must be caught by the resource query's own
   // WHERE company_id = ... (and, independently, by RLS) — not by the
   // top-level membership check, which has nothing to say about this case.
-  const res = await agentA.get(`/api/companies/${fx.companyAId}/employees/${fx.employeeBId}`);
+  const res = await authed(fx.tokenA).get(`/api/companies/${fx.companyAId}/employees/${fx.employeeBId}`);
   assert.equal(res.status, 404);
   assert.deepEqual(res.body, { error: "Not found." });
 });
 
 test("attack: a well-formed but entirely nonexistent company id is denied, not 500", async () => {
-  const res = await agentA.get("/api/companies/00000000-0000-0000-0000-000000000000/employees");
+  const res = await authed(fx.tokenA).get("/api/companies/00000000-0000-0000-0000-000000000000/employees");
   assert.equal(res.status, 403);
   assert.deepEqual(res.body, { error: "Access denied." });
 });
 
 test("attack: a malformed company id is denied, not a database error", async () => {
-  const res = await agentA.get("/api/companies/not-a-uuid-at-all/employees");
+  const res = await authed(fx.tokenA).get("/api/companies/not-a-uuid-at-all/employees");
   assert.equal(res.status, 403);
   assert.deepEqual(res.body, { error: "Access denied." });
 });
 
 test("attack: guessing a random nonexistent employee id within my own company 404s the same way", async () => {
-  const res = await agentA.get(`/api/companies/${fx.companyAId}/employees/ffffffff-ffff-ffff-ffff-ffffffffffff`);
+  const res = await authed(fx.tokenA).get(
+    `/api/companies/${fx.companyAId}/employees/ffffffff-ffff-ffff-ffff-ffffffffffff`
+  );
   assert.equal(res.status, 404);
   assert.deepEqual(res.body, { error: "Not found." });
 });
@@ -272,13 +298,15 @@ test("attack: guessing a random nonexistent employee id within my own company 40
 // ---------- Platform administration is separate from any company role ----------
 
 test("a company Owner cannot reach platform-admin routes", async () => {
-  const res = await agentA.get("/api/platform/companies");
+  const res = await authed(fx.tokenA).get("/api/platform/companies");
   assert.equal(res.status, 403);
   assert.deepEqual(res.body, { error: "Access denied." });
 });
 
 test("a company Owner cannot suspend another company via the platform route either", async () => {
-  const res = await agentA.patch(`/api/platform/companies/${fx.companyBId}/status`).send({ status: "suspended" });
+  const res = await authed(fx.tokenA).patch(`/api/platform/companies/${fx.companyBId}/status`).send({
+    status: "suspended",
+  });
   assert.equal(res.status, 403);
 });
 
@@ -287,11 +315,10 @@ test("a company Owner cannot suspend another company via the platform route eith
 test("suspending a membership immediately revokes that user's access, not just at next login", async () => {
   const stamp = Date.now();
   const email = `member-${stamp}@example.com`;
-  const memberAgent = request.agent(app);
-  const signup = await memberAgent.post("/api/auth/signup").send({ email, password: "password123", fullName: "Member" });
-  assert.equal(signup.status, 201);
+  const member = await createTestIdentity(email, "Member");
+  const memberAgent = authed(member.token);
 
-  const invite = await agentA.post(`/api/companies/${fx.companyAId}/members`).send({ email });
+  const invite = await authed(fx.tokenA).post(`/api/companies/${fx.companyAId}/members`).send({ email });
   assert.equal(invite.status, 201);
   const accept = await memberAgent.post(`/api/me/invitations/${fx.companyAId}/accept`);
   assert.equal(accept.status, 200);
@@ -305,7 +332,9 @@ test("suspending a membership immediately revokes that user's access, not just a
       [fx.companyAId, email]
     )
   );
-  const suspend = await agentA.patch(`/api/companies/${fx.companyAId}/members/${membershipRow.rows[0].id}/suspend`);
+  const suspend = await authed(fx.tokenA).patch(
+    `/api/companies/${fx.companyAId}/members/${membershipRow.rows[0].id}/suspend`
+  );
   assert.equal(suspend.status, 200);
 
   const afterSuspend = await memberAgent.get(`/api/companies/${fx.companyAId}/employees`);
@@ -317,14 +346,68 @@ test("suspending a membership immediately revokes that user's access, not just a
 
 test("every cross-company denial in this file returns the exact same shape", async () => {
   const responses = await Promise.all([
-    agentA.get(`/api/companies/${fx.companyBId}/employees`),
-    agentA.get(`/api/companies/${fx.companyBId}/invoices/${fx.invoiceBId}`),
-    agentA.get(`/api/companies/${fx.companyBId}/documents/${fx.documentBId}`),
-    agentA.get("/api/companies/00000000-0000-0000-0000-000000000000/employees"),
+    authed(fx.tokenA).get(`/api/companies/${fx.companyBId}/employees`),
+    authed(fx.tokenA).get(`/api/companies/${fx.companyBId}/invoices/${fx.invoiceBId}`),
+    authed(fx.tokenA).get(`/api/companies/${fx.companyBId}/documents/${fx.documentBId}`),
+    authed(fx.tokenA).get("/api/companies/00000000-0000-0000-0000-000000000000/employees"),
   ]);
   for (const res of responses) {
     assert.equal(res.status, 403);
     assert.deepEqual(res.body, { error: "Access denied." });
     assert.equal(Object.keys(res.body).length, 1); // nothing extra leaked in the payload
   }
+});
+
+// ---------- No token at all, or a garbage token, is rejected the same way ----------
+
+test("a request with no Authorization header at all is rejected", async () => {
+  const res = await request(app).get(`/api/companies/${fx.companyAId}/employees`);
+  assert.equal(res.status, 401);
+});
+
+test("a syntactically invalid bearer token is rejected, not a 500", async () => {
+  const res = await request(app)
+    .get(`/api/companies/${fx.companyAId}/employees`)
+    .set("Authorization", "Bearer not-a-real-jwt");
+  assert.equal(res.status, 401);
+});
+
+test("a token signed with the wrong key is rejected", async () => {
+  // Same claims/shape as a real test token, but never issued by this
+  // process's test keypair -- simulates a forged/tampered token.
+  const forged = signTestAccessToken(`auth0|forged-${randomUUID()}`, config.auth0Audience) + "tampered";
+  const res = await request(app).get(`/api/companies/${fx.companyAId}/employees`).set("Authorization", `Bearer ${forged}`);
+  assert.equal(res.status, 401);
+});
+
+// ---------- JIT provisioning: a brand-new Auth0 identity gets a real row ----------
+
+test("a first-time Auth0 identity is provisioned into users on first authenticated request", async () => {
+  const sub = `auth0|test-new-${randomUUID()}`;
+  const token = signTestAccessToken(sub, config.auth0Audience);
+  const email = `brand-new-${Date.now()}@example.com`;
+
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = (async (url: string | URL) => {
+    if (String(url).endsWith("/userinfo")) {
+      return new Response(JSON.stringify({ sub, email, email_verified: true, name: "Brand New User" }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      });
+    }
+    return originalFetch(url as never);
+  }) as typeof fetch;
+
+  try {
+    const res = await authed(token).get("/api/auth/me");
+    assert.equal(res.status, 200);
+    assert.equal(res.body.email, email);
+    assert.equal(res.body.fullName, "Brand New User");
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+
+  const row = await pool.query("SELECT id, email, auth0_sub FROM users WHERE auth0_sub = $1", [sub]);
+  assert.equal(row.rows.length, 1);
+  assert.equal(row.rows[0].email, email);
 });

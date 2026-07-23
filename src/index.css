@@ -821,6 +821,17 @@ textarea:focus {
   text-align: center;
 }
 
+/* ---------- App loading (Auth0 session check in progress) ---------- */
+.app-loading {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--page-bg);
+  color: var(--text-muted);
+  font-size: 14px;
+}
+
 /* ---------- Sign in page ---------- */
 .signin-page {
   min-height: 100vh;
