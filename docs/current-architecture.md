@@ -1,8 +1,21 @@
 # NeroBooks — Current Architecture Assessment
 
-Status: **frontend-only demo/prototype**. There is no backend, no database, and no
-real authentication anywhere in this codebase. Every "account," "invoice," and
-"team" is a JavaScript object living in the browser's `localStorage`.
+> **2026-07-23 update:** a real backend now exists at `server/` — a
+> Node/TypeScript/Express API against a real PostgreSQL database, with real
+> password hashing, JWT sessions, multi-tenant row-level security, and an
+> automated cross-company security test suite (18/18 passing). See
+> `docs/database-schema.md` and `docs/multi-tenant-security.md`. **It is not
+> yet connected to this frontend** — the sections below describing the
+> frontend as talking to `localStorage` only, with zero real auth, remain
+> fully accurate for the deployed app a user actually experiences today.
+> Sections §8 and §15 have been updated to reflect what now exists on the
+> backend side; everything else in this document is still current.
+
+Status: **frontend is still a localStorage-only demo/prototype**, now sitting
+next to a real, tested backend it doesn't call yet. Every "account,"
+"invoice," and "team" a user sees in the live app is still a JavaScript
+object living in the browser's `localStorage` — none of it round-trips to
+`server/`.
 
 This document is a factual inventory of what exists today, as of the current
 `main` branch. It does not propose changes — see `backend-roadmap.md` for that.
@@ -230,16 +243,45 @@ two people/devices see completely independent app states.
 
 ## 8. API routes or server functions
 
-**None exist.** This is a 100%-static site:
+**None reachable from this frontend.** The frontend itself is still a
+100%-static site with zero network calls:
 
 - No `fetch()`, `axios`, `XMLHttpRequest`, or `import.meta.env` usage anywhere
   in `src/` (verified by full-tree search).
-- No `/api` folder, no server entry point, no serverless functions.
+- No `/api` folder inside `src/`, no server entry point in this app, no
+  serverless functions.
 - The only "network" behavior in the app is the CSV export on the Reports page,
   which builds a `Blob` client-side and triggers a browser download — no
   request ever leaves the browser.
 - GitHub Pages (the deployment target — see §12) only serves static files; it
   cannot run server code even if some were added.
+
+**However, a real API now exists in this same repo, at `server/`** — built,
+tested, and passing, but not called by anything above. Summary (full detail in
+`docs/database-schema.md` and `docs/multi-tenant-security.md`):
+
+- Node.js + TypeScript + Express, `server/src/`. Real PostgreSQL via `pg`
+  (`server/src/db/pool.ts`), 18 migrations (`db/migrations/0001`–`0018`)
+  covering companies, users, RBAC, departments/employees, payroll, invoicing,
+  customers/vendors, chart of accounts/journal entries, documents, and audit
+  logs.
+- Real auth: bcrypt password hashing, JWT session cookies
+  (`server/src/auth/`), signup/login/logout/`me` (`server/src/routes/auth.routes.ts`).
+- Real multi-tenancy: every company-owned table has PostgreSQL row-level
+  security policies (`db/migrations/0017`), enforced in addition to
+  application-layer `company_id` checks on every query.
+- Routes exist today for: companies (create/profile/settings/logo), company
+  memberships (invite/accept/suspend/activate), and a minimal slice of
+  employees/payroll-runs/invoices/documents (`server/src/routes/`) — enough
+  surface area to prove and test the tenant-isolation model, **not** the full
+  CRUD surface every frontend screen needs (see §15 and `backend-roadmap.md`).
+- Automated tests: `server/tests/multi-tenant-security.test.ts`, 18 tests, run
+  against a real `nerobooks_test` database via `npm test` inside `server/`.
+
+**The gap that matters most right now:** this backend is real and secure, but
+the frontend has zero code that calls it. Connecting the two — starting with
+auth (Phase 0 in `backend-roadmap.md`) — is the next concrete step, not
+building more backend in isolation.
 
 ## 9. Environment-variable setup
 
@@ -337,9 +379,28 @@ UI at all, despite what a real Chart of Accounts / ledger page would need.
 
 ## 15. Which backend services need to be created
 
-Covered in detail in **`backend-roadmap.md`**. In one line: everything —
-there is currently zero backend. At minimum: an auth service (real password
-hashing + sessions/tokens), a data-persistence API for every entity in
-`types.ts`, a billing/subscription service (ideally via a real payments
-provider, not self-reported plan state), and a live currency-exchange-rate
-feed to replace the static table.
+Covered in detail in **`backend-roadmap.md`**. Updated for what now exists:
+
+**Already built** (`server/`, see §8): auth service (real bcrypt + JWT),
+company/tenant model with RLS, company membership/invitation flow, and a
+minimal proof-of-concept slice of employees/payroll/invoices/documents.
+
+**Still needed:**
+
+- Wiring the frontend to any of this — `AuthContext`, `DataContext`,
+  `CurrencyContext`, `TeamContext` all still read/write `localStorage` only.
+- Full CRUD API coverage for customers, vendors, invoices (+ line items),
+  expenses, chart of accounts, journal entries/ledger transactions, and
+  reports computed server-side — the backend's RLS/schema already supports
+  these tables (`db/migrations`), but route handlers for most of them don't
+  exist yet in `server/src/routes/`.
+- A real employee-management and payroll UI in the frontend — the backend has
+  `employees`/`payroll_runs` tables and RLS policies, but **no frontend
+  screen for either exists at all** (§5).
+- A billing/subscription service via a real payments provider (Stripe or
+  similar) — `plan` is still 100% client-controlled today, both in the
+  frontend and because no backend billing table/webhook handler exists yet.
+- A live currency-exchange-rate feed to replace the static table in
+  `src/lib/exchangeRates.ts`.
+- Email delivery (verification, password reset, invitations) — the backend
+  has the auth/invitation flows but no email provider wired in yet.

@@ -1,5 +1,15 @@
 # NeroBooks — Backend Roadmap
 
+> **2026-07-23 update:** Phase 0 below is now substantially built — see
+> `server/` and `docs/database-schema.md` / `docs/multi-tenant-security.md`.
+> The stack that got built differs from this doc's original suggestions in a
+> few places (raw SQL migrations instead of Prisma/Drizzle; hand-rolled
+> bcrypt+JWT auth instead of a managed provider — see the note under Phase 0
+> below on why, and the open question it leaves); the plan itself held up.
+> Phase 0 items are marked `[DONE]` inline. **The frontend still isn't wired
+> to any of it** — that wiring is now the actual next step, not more backend
+> work in isolation.
+
 This proposes an architecture and phased plan to turn NeroBooks from a
 localStorage-only demo into a real multi-user product. It assumes nothing
 about timeline or budget beyond "do this in a sane order" — adjust freely.
@@ -89,24 +99,64 @@ first.
 
 ### Phase 0 — Foundations (do first, blocks everything else)
 
-1. Stand up the API skeleton + Postgres + migrations for the core schema
-   (`database-requirements.md`).
-2. Real auth: signup/login/logout, password hashing, session or JWT issuance,
-   **email verification**, **password reset** (currently doesn't exist at
-   all). Wire `AuthContext.signIn/signOut` to call the real API instead of
-   writing straight to localStorage.
-3. Introduce the `Organization`/`Company` concept and require every other
-   table to be scoped to one — this is what makes "Team" mean something.
-4. Environment-variable setup for the frontend (`VITE_API_BASE_URL`) and
-   backend (DB connection string, JWT secret, etc.) — currently zero env vars
-   exist anywhere.
+1. `[DONE]` Stand up the API skeleton + Postgres + migrations for the core
+   schema. Implemented as raw SQL migrations (`db/migrations/0001`–`0018`)
+   rather than Prisma/Drizzle as originally suggested — see
+   `docs/database-schema.md` for the as-built schema and why some table/
+   column names differ from `database-requirements.md`'s original proposal
+   (e.g. `companies`/`company_memberships`, not `organizations`/
+   `memberships`).
+2. `[PARTIAL]` Real auth: signup/login/logout, password hashing (bcrypt),
+   JWT session cookies are done (`server/src/auth/`,
+   `server/src/routes/auth.routes.ts`). **Email verification and password
+   reset are not implemented** — `email_verified_at` exists as a column but
+   nothing sets it, and there is no reset-token flow yet (see
+   `database-requirements.md`'s `password_reset_tokens` table, which hasn't
+   been built). This doc originally recommended a managed auth provider
+   (Clerk/Auth0/Supabase Auth) instead of hand-rolling this — that decision
+   was never made explicitly; a custom implementation shipped instead. It's
+   reasonably solid (bcrypt cost 12, constant-time dummy-hash comparison for
+   nonexistent users, no plaintext storage) but has not had independent
+   security review, and still lacks email verification, password reset, MFA,
+   and rate limiting — all called out as required in `security-risks.md`.
+   **`AuthContext.signIn/signOut` in the frontend still writes to
+   `localStorage` only and has not been wired to this API at all.**
+3. `[DONE]` Company/tenant model: `companies`, `company_settings`,
+   `company_memberships`, RBAC (`roles`/`permissions`/`role_permissions`/
+   `user_roles`), and PostgreSQL row-level security on every company-owned
+   table (`db/migrations/0017`). See `docs/multi-tenant-security.md` for the
+   full model and its automated test suite (18/18 passing, real attack
+   scenarios). This is more thorough than originally scoped here — RLS
+   wasn't just "considered as a backstop," it's the primary enforcement
+   layer alongside application checks.
+4. `[PARTIAL]` Environment-variable setup: done for the backend
+   (`server/.env.example`, `server/.env`/`server/.env.test`, gitignored).
+   **Not done for the frontend** — no `.env`/`VITE_API_BASE_URL` exists in
+   the root app yet, because the frontend doesn't call any API yet.
+
+### Phase 0.5 — Connect the frontend to what's already built (not yet started)
+
+Before Phase 1's new API work, the frontend needs to start calling the
+backend that already exists: an API client module (currently absent — zero
+`fetch`/`axios` calls anywhere in `src/`), a `VITE_API_BASE_URL` env var, and
+rewiring `AuthContext` to call `POST /api/auth/signup` / `/login` / `/logout`
+/ `GET /api/auth/me` instead of writing directly to `localStorage`. This is
+low-risk to attempt first because it touches one context and doesn't require
+any new backend routes — the auth API is already complete enough to replace
+today's fake sign-in.
 
 ### Phase 1 — Core accounting data (highest user-visible value)
 
-1. CRUD API + DB tables for Customers, Vendors, Expenses, Invoices (with line
-   items) — replace `DataContext`'s localStorage read/write with `fetch` calls.
-   Add the edit/delete operations that don't currently exist in the UI at all
-   for these entities.
+1. `[PARTIAL]` CRUD API + DB tables for Customers, Vendors, Expenses,
+   Invoices (with line items). Tables exist for all four
+   (`db/migrations/0009`, `0010`); RLS is in place. **Route handlers mostly
+   don't exist yet** — `server/src/routes/resources.routes.ts` currently only
+   has `GET /invoices/:id` (no list, no create/edit/delete, and no routes at
+   all yet for customers, vendors, or expenses). Building these out, then
+   replacing `DataContext`'s localStorage read/write with real `fetch` calls,
+   is the largest remaining piece of Phase 1. Add the edit/delete operations
+   that don't currently exist in the *frontend UI* at all for these entities
+   while doing so.
 2. Chart of Accounts and Transactions: move from read-only seed data to real
    CRUD, and — critically — compute account balances from the transaction
    ledger server-side rather than storing a denormalized `balance` field that

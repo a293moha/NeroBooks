@@ -1,10 +1,24 @@
 # NeroBooks — Security Risk Assessment
 
-Scope: the app **as it exists today** — a static, backend-less demo deployed
-publicly on GitHub Pages — plus the risks that will appear the moment a real
-backend, real users, and real payments are added per `backend-roadmap.md`.
-Severity is rated for *today's demo context*; several items jump to
-critical the instant this handles real customer data or money.
+> **2026-07-23 update:** a real backend now exists (`server/`) that fixes
+> several items below **in the backend itself** — real bcrypt password
+> hashing (#1–2), server-side multi-tenant isolation via RLS (#6/§multi-tenant
+> risk), and a company_id trust model that never believes the client (see
+> `docs/multi-tenant-security.md`). **None of this reaches an actual user
+> yet** — the deployed frontend still has zero code calling this backend, so
+> every risk below rated against "today's demo context" is still the
+> accurate rating for the live app. Treat this backend's existence as
+> reducing the *cost* of fixing these, not as having fixed them for anyone
+> using the product today. Items still fully open even on the backend: email
+> verification, password reset, MFA, rate limiting on auth endpoints (all
+> called out again in Phase 0 of `backend-roadmap.md`), and billing/plan
+> integrity (no subscriptions table or payment webhook exists yet).
+
+Scope: the app **as it exists today** — a static, backend-less-in-practice
+demo deployed publicly on GitHub Pages — plus the risks that will appear the
+moment a real backend, real users, and real payments are added per
+`backend-roadmap.md`. Severity is rated for *today's demo context*; several
+items jump to critical the instant this handles real customer data or money.
 
 ## Summary
 
