@@ -24,6 +24,18 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run build
+        env:
+          # Vite bakes these in at build time -- they must be set as repo
+          # secrets (Settings -> Secrets and variables -> Actions), or every
+          # deployed build silently ships "undefined" wherever these are
+          # used (this is what broke the live Auth0 redirect). Not secrets
+          # in the sensitive sense (the SPA client id/audience/domain ship
+          # in the bundle either way), but env-configured rather than
+          # hardcoded so per-environment values don't require a code change.
+          VITE_AUTH0_DOMAIN: ${{ secrets.VITE_AUTH0_DOMAIN }}
+          VITE_AUTH0_CLIENT_ID: ${{ secrets.VITE_AUTH0_CLIENT_ID }}
+          VITE_AUTH0_AUDIENCE: ${{ secrets.VITE_AUTH0_AUDIENCE }}
+          VITE_API_BASE_URL: ${{ secrets.VITE_API_BASE_URL }}
       - uses: actions/upload-pages-artifact@v3
         with:
           path: dist
