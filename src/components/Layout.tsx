@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { NavLink, Outlet } from "react-router-dom";
+import { Link, NavLink, Outlet } from "react-router-dom";
 import {
   AccountsIcon,
   BillingIcon,
@@ -78,10 +78,10 @@ export default function Layout() {
   return (
     <div className="app-shell">
       <header className="app-header">
-        <div className="brand">
+        <Link to="/" className="brand">
           <span className="brand-mark">NB</span>
           <span>NeroBooks</span>
-        </div>
+        </Link>
         <div className="header-search">
           <div style={{ position: "relative" }}>
             <SearchIcon
