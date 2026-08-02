@@ -2,10 +2,12 @@ import { HashRouter, Route, Routes } from "react-router-dom";
 import { Auth0Provider } from "@auth0/auth0-react";
 import Layout from "./components/Layout";
 import { AuthProvider, useAuth } from "./context/AuthContext";
+import { CompanyProvider, useCompany } from "./context/CompanyContext";
 import { CurrencyProvider } from "./context/CurrencyContext";
 import { DataProvider } from "./context/DataContext";
 import { TeamProvider } from "./context/TeamContext";
 import SignIn from "./pages/SignIn";
+import Onboarding from "./pages/Onboarding";
 import Dashboard from "./pages/Dashboard";
 import Invoices from "./pages/Invoices";
 import Customers from "./pages/Customers";
@@ -20,9 +22,12 @@ import Admin from "./pages/Admin";
 
 function AuthGate() {
   const { user, isLoading } = useAuth();
+  const { isLoading: companyLoading, needsOnboarding } = useCompany();
 
   if (isLoading) return <div className="app-loading">Loading…</div>;
   if (!user) return <SignIn />;
+  if (companyLoading) return <div className="app-loading">Loading…</div>;
+  if (needsOnboarding) return <Onboarding />;
 
   return (
     <Routes>
@@ -61,15 +66,17 @@ function App() {
       }}
     >
       <AuthProvider>
-        <CurrencyProvider>
-          <DataProvider>
-            <TeamProvider>
-              <HashRouter>
-                <AuthGate />
-              </HashRouter>
-            </TeamProvider>
-          </DataProvider>
-        </CurrencyProvider>
+        <CompanyProvider>
+          <CurrencyProvider>
+            <DataProvider>
+              <TeamProvider>
+                <HashRouter>
+                  <AuthGate />
+                </HashRouter>
+              </TeamProvider>
+            </DataProvider>
+          </CurrencyProvider>
+        </CompanyProvider>
       </AuthProvider>
     </Auth0Provider>
   );

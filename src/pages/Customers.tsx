@@ -3,12 +3,12 @@ import { useSearchParams } from "react-router-dom";
 import { useData } from "../context/DataContext";
 import { useCurrency } from "../context/CurrencyContext";
 import { currency, initials } from "../lib/format";
+import { ApiError } from "../lib/apiClient";
 import Modal from "../components/Modal";
 import { PlusIcon } from "../components/icons";
-import type { Customer } from "../types";
 
 export default function Customers() {
-  const { customers, addCustomer } = useData();
+  const { customers, addCustomer, isLoading, error: loadError } = useData();
   const { currencyCode } = useCurrency();
   const [searchParams, setSearchParams] = useSearchParams();
   const [open, setOpen] = useState(false);
@@ -16,6 +16,8 @@ export default function Customers() {
   const [company, setCompany] = useState("");
   const [email, setEmail] = useState("");
   const [phone, setPhone] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const [formError, setFormError] = useState("");
 
   useEffect(() => {
     if (searchParams.get("new") === "1") {
@@ -29,21 +31,27 @@ export default function Customers() {
     setCompany("");
     setEmail("");
     setPhone("");
+    setFormError("");
   };
 
-  const submit = () => {
+  const submit = async () => {
     if (!name.trim() || !email.trim()) return;
-    const customer: Customer = {
-      id: `c${Date.now()}`,
-      name: name.trim(),
-      company: company.trim() || undefined,
-      email: email.trim(),
-      phone: phone.trim() || undefined,
-      balance: 0,
-    };
-    addCustomer(customer);
-    reset();
-    setOpen(false);
+    setSubmitting(true);
+    setFormError("");
+    try {
+      await addCustomer({
+        name: name.trim(),
+        company: company.trim() || undefined,
+        email: email.trim(),
+        phone: phone.trim() || undefined,
+      });
+      reset();
+      setOpen(false);
+    } catch (err) {
+      setFormError(err instanceof ApiError ? err.message : "Could not save this customer. Please try again.");
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   return (
@@ -51,7 +59,7 @@ export default function Customers() {
       <div className="page-header">
         <div>
           <h1 className="page-title">Customers</h1>
-          <p className="page-subtitle">{customers.length} customers</p>
+          <p className="page-subtitle">{isLoading ? "Loading…" : `${customers.length} customers`}</p>
         </div>
         <button className="btn-new" onClick={() => setOpen(true)}>
           <PlusIcon />
@@ -59,6 +67,11 @@ export default function Customers() {
         </button>
       </div>
 
+      {loadError && <div className="signin-error">{loadError}</div>}
+
+      {customers.length === 0 && !isLoading && !loadError ? (
+        <div className="empty-state">No customers yet. Add your first customer to get started.</div>
+      ) : (
       <div className="table-card">
         <table>
           <thead>
@@ -101,6 +114,7 @@ export default function Customers() {
           </tbody>
         </table>
       </div>
+      )}
 
       {open && (
         <Modal
@@ -111,12 +125,13 @@ export default function Customers() {
               <button className="btn-secondary" onClick={() => setOpen(false)}>
                 Cancel
               </button>
-              <button className="btn-primary" onClick={submit}>
-                Save customer
+              <button className="btn-primary" onClick={submit} disabled={submitting}>
+                {submitting ? "Saving…" : "Save customer"}
               </button>
             </>
           }
         >
+          {formError && <div className="signin-error">{formError}</div>}
           <div>
             <label>Full name</label>
             <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Jane Doe" />

@@ -1,85 +1,10 @@
-import type {
-  Account,
-  Customer,
-  Expense,
-  Invoice,
-  Transaction,
-  Vendor,
-} from "../types";
+import type { Account, Transaction } from "../types";
 
-export const seedCustomers: Customer[] = [
-  { id: "c1", name: "Alex Morgan", email: "alex@brightleaf.com", company: "Brightleaf Design", balance: 2400 },
-  { id: "c2", name: "Priya Nair", email: "priya@fernwood.io", company: "Fernwood Studio", balance: 0 },
-  { id: "c3", name: "Sam Whitfield", email: "sam@harbormark.co", company: "Harbormark Co.", balance: 980 },
-  { id: "c4", name: "Jordan Lee", email: "jordan@northpeak.com", company: "Northpeak Consulting", balance: 5200 },
-];
-
-export const seedVendors: Vendor[] = [
-  { id: "v1", name: "CloudBase Hosting", email: "billing@cloudbase.com", category: "Software", balance: 129 },
-  { id: "v2", name: "OfficeMart", email: "orders@officemart.com", category: "Office Supplies", balance: 0 },
-  { id: "v3", name: "Metro Power & Light", email: "billing@metropower.com", category: "Utilities", balance: 210 },
-  { id: "v4", name: "SwiftCourier", email: "support@swiftcourier.com", category: "Travel", balance: 45 },
-];
-
-export const seedInvoices: Invoice[] = [
-  {
-    id: "i1",
-    number: "INV-1001",
-    customerId: "c1",
-    issueDate: "2026-06-15",
-    dueDate: "2026-07-15",
-    status: "overdue",
-    lineItems: [{ id: "li1", description: "Brand identity package", qty: 1, rate: 2400 }],
-  },
-  {
-    id: "i2",
-    number: "INV-1002",
-    customerId: "c2",
-    issueDate: "2026-07-01",
-    dueDate: "2026-07-31",
-    status: "paid",
-    lineItems: [{ id: "li2", description: "Website redesign", qty: 1, rate: 3600 }],
-  },
-  {
-    id: "i3",
-    number: "INV-1003",
-    customerId: "c3",
-    issueDate: "2026-07-05",
-    dueDate: "2026-08-04",
-    status: "sent",
-    lineItems: [{ id: "li3", description: "Consulting hours", qty: 14, rate: 70 }],
-  },
-  {
-    id: "i4",
-    number: "INV-1004",
-    customerId: "c4",
-    issueDate: "2026-07-10",
-    dueDate: "2026-08-09",
-    status: "sent",
-    lineItems: [
-      { id: "li4a", description: "Strategy workshop", qty: 1, rate: 3200 },
-      { id: "li4b", description: "Follow-up sessions", qty: 4, rate: 500 },
-    ],
-  },
-  {
-    id: "i5",
-    number: "INV-1005",
-    customerId: "c1",
-    issueDate: "2026-07-18",
-    dueDate: "2026-08-17",
-    status: "draft",
-    lineItems: [{ id: "li5", description: "Logo refresh", qty: 1, rate: 800 }],
-  },
-];
-
-export const seedExpenses: Expense[] = [
-  { id: "e1", date: "2026-07-01", vendorId: "v1", category: "Software", amount: 129, paymentMethod: "Credit Card" },
-  { id: "e2", date: "2026-07-03", vendorId: "v3", category: "Utilities", amount: 210, paymentMethod: "Bank Transfer" },
-  { id: "e3", date: "2026-07-08", vendorId: "v4", category: "Travel", amount: 45, paymentMethod: "Credit Card" },
-  { id: "e4", date: "2026-07-11", vendorId: "v2", category: "Office Supplies", amount: 88, paymentMethod: "Debit Card" },
-  { id: "e5", date: "2026-06-20", vendorId: "v1", category: "Software", amount: 129, paymentMethod: "Credit Card" },
-  { id: "e6", date: "2026-06-18", vendorId: "v3", category: "Utilities", amount: 195, paymentMethod: "Bank Transfer" },
-];
+// Customers/vendors/invoices/expenses used to be seeded here too, but that
+// was fake data standing in for a real backend -- see DataContext.tsx,
+// which now fetches all four from the Railway API. accounts/transactions
+// remain seed-only below: no chart-of-accounts/general-ledger backend
+// exists yet, so there's nothing real to fetch for these two.
 
 export const seedAccounts: Account[] = [
   { id: "a1", code: "1000", name: "Business Checking", type: "Asset", balance: 18420 },

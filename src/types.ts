@@ -1,4 +1,4 @@
-export type InvoiceStatus = "draft" | "sent" | "paid" | "overdue";
+export type InvoiceStatus = "draft" | "sent" | "paid" | "partially_paid" | "overdue" | "void";
 
 export interface InvoiceLineItem {
   id: string;
@@ -14,11 +14,18 @@ export interface Invoice {
   issueDate: string;
   dueDate: string;
   status: InvoiceStatus;
+  /** Populated by the server (subtotal + tax, before amount_paid) — the source of truth for display; never recomputed client-side from lineItems. */
+  total: number;
+  /** Only populated when explicitly fetched (invoice detail); empty for list rows. */
   lineItems: InvoiceLineItem[];
   notes?: string;
   /** Plus/Advanced only: per-invoice currency override. Absent = account default currency. */
   currency?: string;
-  /** Plus/Advanced only: flags the invoice to recur. No auto-rebilling engine — display only. */
+  /**
+   * Plus/Advanced only: flags the invoice to recur. UI toggle only — there
+   * is no backend column or auto-rebilling engine behind this yet, so it
+   * is never persisted and will not survive a refetch.
+   */
   recurring?: boolean;
 }
 

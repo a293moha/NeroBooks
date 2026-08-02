@@ -3,9 +3,10 @@ import { useSearchParams } from "react-router-dom";
 import { useData } from "../context/DataContext";
 import { useCurrency } from "../context/CurrencyContext";
 import { currency, formatDate } from "../lib/format";
+import { ApiError } from "../lib/apiClient";
 import Modal from "../components/Modal";
 import { PlusIcon } from "../components/icons";
-import type { Expense, ExpenseCategory } from "../types";
+import type { ExpenseCategory } from "../types";
 
 const categories: ExpenseCategory[] = [
   "Advertising",
@@ -22,10 +23,12 @@ const categories: ExpenseCategory[] = [
 const today = () => new Date().toISOString().slice(0, 10);
 
 export default function Expenses() {
-  const { expenses, vendors, addExpense } = useData();
+  const { expenses, vendors, addExpense, isLoading, error: loadError } = useData();
   const { currencyCode } = useCurrency();
   const [searchParams, setSearchParams] = useSearchParams();
   const [open, setOpen] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [formError, setFormError] = useState("");
 
   useEffect(() => {
     if (searchParams.get("new") === "1") {
@@ -51,23 +54,30 @@ export default function Expenses() {
     setAmount("");
     setPaymentMethod("Credit Card");
     setMemo("");
+    setFormError("");
   };
 
-  const submit = () => {
+  const submit = async () => {
     const value = Number(amount);
-    if (!vendorId || !value) return;
-    const expense: Expense = {
-      id: `e${Date.now()}`,
-      date,
-      vendorId,
-      category,
-      amount: value,
-      paymentMethod,
-      memo: memo.trim() || undefined,
-    };
-    addExpense(expense);
-    reset();
-    setOpen(false);
+    if (!value) return;
+    setSubmitting(true);
+    setFormError("");
+    try {
+      await addExpense({
+        date,
+        vendorId,
+        category,
+        amount: value,
+        paymentMethod,
+        memo: memo.trim() || undefined,
+      });
+      reset();
+      setOpen(false);
+    } catch (err) {
+      setFormError(err instanceof ApiError ? err.message : "Could not save this expense. Please try again.");
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   return (
@@ -75,7 +85,9 @@ export default function Expenses() {
       <div className="page-header">
         <div>
           <h1 className="page-title">Expenses</h1>
-          <p className="page-subtitle">{currency(totalThisList, currencyCode)} total logged</p>
+          <p className="page-subtitle">
+            {isLoading ? "Loading…" : `${currency(totalThisList, currencyCode)} total logged`}
+          </p>
         </div>
         <button className="btn-new" onClick={() => setOpen(true)}>
           <PlusIcon />
@@ -83,6 +95,11 @@ export default function Expenses() {
         </button>
       </div>
 
+      {loadError && <div className="signin-error">{loadError}</div>}
+
+      {expenses.length === 0 && !isLoading && !loadError ? (
+        <div className="empty-state">No expenses yet. Record your first expense to get started.</div>
+      ) : (
       <div className="table-card">
         <table>
           <thead>
@@ -107,6 +124,7 @@ export default function Expenses() {
           </tbody>
         </table>
       </div>
+      )}
 
       {open && (
         <Modal
@@ -117,12 +135,13 @@ export default function Expenses() {
               <button className="btn-secondary" onClick={() => setOpen(false)}>
                 Cancel
               </button>
-              <button className="btn-primary" onClick={submit}>
-                Save expense
+              <button className="btn-primary" onClick={submit} disabled={submitting}>
+                {submitting ? "Saving…" : "Save expense"}
               </button>
             </>
           }
         >
+          {formError && <div className="signin-error">{formError}</div>}
           <div className="field-row">
             <div>
               <label>Date</label>
