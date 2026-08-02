@@ -14,7 +14,7 @@ import { useData } from "../context/DataContext";
 import { useCurrency } from "../context/CurrencyContext";
 import { convertAmount } from "../lib/exchangeRates";
 import { currency, invoiceTotal } from "../lib/format";
-import { monthlyTrend } from "../lib/trend";
+import { computeMonthlyTrend } from "../lib/trend";
 import StatusBadge from "../components/StatusBadge";
 
 // Recharts sets these as raw SVG attributes, which cannot resolve CSS
@@ -38,6 +38,7 @@ export default function Dashboard() {
   const { invoices, customers, expenses } = useData();
   const { currencyCode, currencyOptions } = useCurrency();
   const symbol = currencyOptions.find((c) => c.code === currencyCode)?.symbol ?? "$";
+  const monthlyTrend = computeMonthlyTrend(invoices, expenses);
 
   const inAccountCurrency = (inv: (typeof invoices)[number]) =>
     convertAmount(invoiceTotal(inv), inv.currency ?? currencyCode, currencyCode);

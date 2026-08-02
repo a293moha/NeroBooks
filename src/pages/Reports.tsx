@@ -3,7 +3,7 @@ import { useData } from "../context/DataContext";
 import { useCurrency } from "../context/CurrencyContext";
 import { useAuth } from "../context/AuthContext";
 import { planLimits } from "../lib/planLimits";
-import { projectNextMonths } from "../lib/trend";
+import { computeMonthlyTrend, projectNextMonths } from "../lib/trend";
 import { currency } from "../lib/format";
 import UpgradeBanner from "../components/UpgradeBanner";
 
@@ -23,7 +23,7 @@ const monthlyBudgets: Record<string, number> = {
 };
 
 export default function Reports() {
-  const { accounts, expenses } = useData();
+  const { accounts, expenses, invoices } = useData();
   const { currencyCode } = useCurrency();
   const { user } = useAuth();
   const fmt = (amount: number) => currency(amount, currencyCode);
@@ -56,7 +56,7 @@ export default function Reports() {
   const netChangeInCash = netIncome;
   const beginningCash = endingCash - netChangeInCash;
 
-  const forecast = projectNextMonths(3);
+  const forecast = projectNextMonths(computeMonthlyTrend(invoices, expenses), 3);
 
   const exportCsv = () => {
     if (!limits.exportReports) return;
