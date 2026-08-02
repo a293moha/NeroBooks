@@ -8,24 +8,6 @@ import { recordAuditEntry } from "../services/auditService.js";
 import { createCompanyWithOwner } from "../services/companyService.js";
 import { createInitialSubscription, VALID_PLANS, type Plan } from "../services/subscriptionService.js";
 import { asyncHandler } from "../middleware/asyncHandler.js";
-import { platformPool } from "../db/platformPool.js";
-
-// TEMPORARY diagnostic aid for a production-only 404 on this route that
-// doesn't reproduce via curl/direct requests -- writes a breadcrumb to
-// audit_logs (via platformPool, bypassing RLS, since we don't yet know if
-// req.userId/company context is even reachable) at each stage so the
-// failure point is visible from the database even though Railway's logs
-// aren't accessible from here. Remove once root-caused.
-async function debugMark(stage: string, userId: string | undefined): Promise<void> {
-  try {
-    await platformPool.query(
-      "INSERT INTO audit_logs (company_id, actor_user_id, action) VALUES (NULL, $1, $2)",
-      [userId ?? null, `debug.onboarding.${stage}`]
-    );
-  } catch {
-    // never let diagnostics break the real request
-  }
-}
 
 export const meRouter = Router();
 meRouter.use(requireAuth);
@@ -76,20 +58,16 @@ meRouter.get(
 meRouter.post(
   "/onboarding",
   asyncHandler(async (req, res) => {
-    await debugMark("entered", req.userId);
     const { companyName, plan, defaultCurrency, countryCode } = req.body ?? {};
 
     if (typeof companyName !== "string" || companyName.trim().length === 0) {
-      await debugMark("bad_company_name", req.userId);
       res.status(400).json({ error: "Company name is required." });
       return;
     }
     if (typeof plan !== "string" || !VALID_PLANS.includes(plan as Plan)) {
-      await debugMark("bad_plan", req.userId);
       res.status(400).json({ error: `plan must be one of: ${VALID_PLANS.join(", ")}.` });
       return;
     }
-    await debugMark("validated", req.userId);
 
     const existing = await withTenantContext({ userId: req.userId! }, (client) =>
       client.query<{ company_id: string }>(
@@ -99,7 +77,6 @@ meRouter.post(
         [req.userId]
       )
     );
-    await debugMark("checked_existing", req.userId);
 
     let companyId: string;
     let created: boolean;
@@ -128,14 +105,11 @@ meRouter.post(
           after: { name: companyName.trim(), plan },
         });
       });
-      await debugMark("company_created", req.userId);
     }
 
     await createInitialSubscription(companyId, plan as Plan, req.userId!);
-    await debugMark("subscription_created", req.userId);
 
     res.status(created ? 201 : 200).json({ companyId, plan, created });
-    await debugMark("responded", req.userId);
   })
 );
 

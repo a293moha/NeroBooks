@@ -4,19 +4,6 @@ import { pool } from "../db/pool.js";
 import { withTenantContext } from "../db/context.js";
 import { config } from "../config.js";
 import { asyncHandler } from "../middleware/asyncHandler.js";
-import { platformPool } from "../db/platformPool.js";
-
-// TEMPORARY diagnostic aid, see routes/memberships.routes.ts's debugMark
-// for context. Remove once root-caused.
-async function debugMark(stage: string, extra?: string): Promise<void> {
-  try {
-    await platformPool.query("INSERT INTO audit_logs (company_id, actor_user_id, action) VALUES (NULL, NULL, $1)", [
-      `debug.requireAuth.${stage}${extra ? `:${extra}` : ""}`,
-    ]);
-  } catch {
-    // never let diagnostics break the real request
-  }
-}
 
 /**
  * A single, deliberately uninformative response for every authorization
@@ -155,15 +142,12 @@ async function provisionOrLinkUser(sub: string, accessToken: string): Promise<Pr
  * suspended/deactivated account loses access immediately.
  */
 export const requireAuth = asyncHandler(async (req: Request, res: Response, next: NextFunction) => {
-  await debugMark("start", `${req.method} ${req.originalUrl}`);
   try {
     await runCheckJwt(req, res);
   } catch {
-    await debugMark("checkjwt_failed", `${req.method} ${req.originalUrl}`);
     res.status(401).json({ error: "Not authenticated." });
     return;
   }
-  await debugMark("checkjwt_ok", `${req.method} ${req.originalUrl}`);
 
   const sub = req.auth?.payload.sub;
   const authHeader = req.headers.authorization;
@@ -187,7 +171,6 @@ export const requireAuth = asyncHandler(async (req: Request, res: Response, next
 
   req.userId = user.id;
   req.isPlatformAdmin = user.is_platform_admin;
-  await debugMark("calling_next", `${req.method} ${req.originalUrl}`);
   next();
 });
 
