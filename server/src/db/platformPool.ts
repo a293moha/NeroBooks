@@ -1,5 +1,5 @@
 import { Pool } from "pg";
-import { config } from "../config.js";
+import { config, isProduction } from "../config.js";
 
 /**
  * A deliberately separate connection pool, using the nerobooks_platform_admin
@@ -10,4 +10,7 @@ import { config } from "../config.js";
  * cross-tenant by definition, which is exactly why this needs its own
  * credential instead of a flag threaded through the normal RLS policies.
  */
-export const platformPool = new Pool({ connectionString: config.platformDatabaseUrl });
+export const platformPool = new Pool({
+  connectionString: config.platformDatabaseUrl,
+  ssl: isProduction ? { rejectUnauthorized: false } : undefined,
+});
