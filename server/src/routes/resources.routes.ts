@@ -742,12 +742,20 @@ resourcesRouter.post(
         const subtotal = lineItems.reduce((sum, li) => sum + li.quantity * li.unitPrice, 0);
         const currency = typeof body.currency === "string" ? body.currency.toUpperCase() : "USD";
 
+        // Always inserted as 'draft' first, regardless of the requested
+        // status: trg_invoice_items_immutable (0010) rejects inserting
+        // line items against any invoice whose status isn't 'draft', so
+        // creating directly with status='sent' and then inserting items
+        // in the same transaction would always fail. Transitioning to
+        // 'sent' happens as a separate UPDATE below, once items already
+        // exist -- exactly the sequence the trigger was designed around
+        // (create as draft, add items, then send).
         const invoice = await client.query(
           `INSERT INTO invoices (company_id, customer_id, invoice_number, issue_date, due_date, status,
                                   currency, subtotal, tax_total, total, notes)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 0, $8, $9)
+           VALUES ($1, $2, $3, $4, $5, 'draft', $6, $7, 0, $7, $8)
            RETURNING *`,
-          [req.companyId, body.customerId, invoiceNumber, body.issueDate, body.dueDate, status, currency, subtotal, body.notes ?? null]
+          [req.companyId, body.customerId, invoiceNumber, body.issueDate, body.dueDate, currency, subtotal, body.notes ?? null]
         );
         const invoiceId = invoice.rows[0].id;
 
@@ -759,16 +767,22 @@ resourcesRouter.post(
           );
         }
 
+        let finalInvoice = invoice.rows[0];
+        if (status === "sent") {
+          const sent = await client.query("UPDATE invoices SET status = 'sent' WHERE id = $1 RETURNING *", [invoiceId]);
+          finalInvoice = sent.rows[0];
+        }
+
         await recordAuditEntry(client, {
           companyId: req.companyId!,
           actorUserId: req.userId!,
           action: "invoice.created",
           entityType: "invoice",
           entityId: invoiceId,
-          after: invoice.rows[0],
+          after: finalInvoice,
         });
 
-        return invoice.rows[0];
+        return finalInvoice;
       });
 
       if (created === "forbidden") {

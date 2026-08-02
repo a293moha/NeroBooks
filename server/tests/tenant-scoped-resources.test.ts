@@ -127,6 +127,32 @@ test("positive control: Owner A can list and read their own invoice and expense"
   assert.equal(expenses.body.length, 1);
 });
 
+// Regression test: creating an invoice directly with status "sent" (the
+// UI's "Save & send" button) used to 500 in production because the
+// invoice_items immutability trigger (0010) rejects inserting line items
+// against a non-draft invoice, and the create handler used to insert with
+// status='sent' from the start, in the same transaction as the line
+// items. buildCompanyFixture's own invoice above never caught this since
+// it doesn't pass a status at all (defaults to draft).
+test("creating an invoice with status 'sent' directly succeeds, with line items intact", async () => {
+  const res = await authed(a.token).post(`/api/companies/${a.companyId}/invoices`).send({
+    customerId: a.customerId,
+    issueDate: "2026-08-02",
+    dueDate: "2026-09-01",
+    status: "sent",
+    lineItems: [{ description: "10kgs of coffee", quantity: 10, unitPrice: 45000 }],
+    currency: "USD",
+  });
+  assert.equal(res.status, 201);
+  assert.equal(res.body.status, "sent");
+  assert.equal(Number(res.body.total), 450000);
+
+  const items = await authed(a.token).get(`/api/companies/${a.companyId}/invoices/${res.body.id}/items`);
+  assert.equal(items.status, 200);
+  assert.equal(items.body.length, 1);
+  assert.equal(items.body[0].description, "10kgs of coffee");
+});
+
 // ---------- Cross-company denial: list ----------
 
 test("attack: User A cannot list Company B's customers/invoices/expenses", async () => {
