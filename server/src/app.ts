@@ -7,6 +7,7 @@ import { meRouter, membersRouter } from "./routes/memberships.routes.js";
 import { resourcesRouter } from "./routes/resources.routes.js";
 import { platformRouter } from "./routes/platform.routes.js";
 import { errorHandler } from "./middleware/errorHandler.js";
+import { platformPool } from "./db/platformPool.js";
 
 /**
  * Exported as a factory (rather than started at module scope) specifically
@@ -30,6 +31,18 @@ export function createApp() {
   app.use("/api/companies/:companyId/members", membersRouter);
   app.use("/api/companies/:companyId", resourcesRouter);
   app.use("/api/platform", platformRouter);
+
+  // TEMPORARY diagnostic aid: confirms whether a request genuinely fell
+  // through every route (vs the 404 originating somewhere else). Remove
+  // once root-caused -- see routes/memberships.routes.ts's debugMark.
+  app.use((req, _res, next) => {
+    platformPool
+      .query("INSERT INTO audit_logs (company_id, actor_user_id, action) VALUES (NULL, NULL, $1)", [
+        `debug.fell_through_all_routes:${req.method} ${req.originalUrl}`,
+      ])
+      .catch(() => {});
+    next();
+  });
 
   app.use(errorHandler);
 
