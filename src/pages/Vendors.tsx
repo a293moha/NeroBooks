@@ -3,18 +3,20 @@ import { useSearchParams } from "react-router-dom";
 import { useData } from "../context/DataContext";
 import { useCurrency } from "../context/CurrencyContext";
 import { currency } from "../lib/format";
+import { ApiError } from "../lib/apiClient";
 import Modal from "../components/Modal";
 import { PlusIcon } from "../components/icons";
-import type { Vendor } from "../types";
 
 export default function Vendors() {
-  const { vendors, addVendor } = useData();
+  const { vendors, addVendor, isLoading, error: loadError } = useData();
   const { currencyCode } = useCurrency();
   const [searchParams, setSearchParams] = useSearchParams();
   const [open, setOpen] = useState(false);
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [category, setCategory] = useState("Software");
+  const [submitting, setSubmitting] = useState(false);
+  const [formError, setFormError] = useState("");
 
   useEffect(() => {
     if (searchParams.get("new") === "1") {
@@ -27,20 +29,22 @@ export default function Vendors() {
     setName("");
     setEmail("");
     setCategory("Software");
+    setFormError("");
   };
 
-  const submit = () => {
+  const submit = async () => {
     if (!name.trim() || !email.trim()) return;
-    const vendor: Vendor = {
-      id: `v${Date.now()}`,
-      name: name.trim(),
-      email: email.trim(),
-      category,
-      balance: 0,
-    };
-    addVendor(vendor);
-    reset();
-    setOpen(false);
+    setSubmitting(true);
+    setFormError("");
+    try {
+      await addVendor({ name: name.trim(), email: email.trim(), category });
+      reset();
+      setOpen(false);
+    } catch (err) {
+      setFormError(err instanceof ApiError ? err.message : "Could not save this vendor. Please try again.");
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   return (
@@ -48,7 +52,7 @@ export default function Vendors() {
       <div className="page-header">
         <div>
           <h1 className="page-title">Vendors</h1>
-          <p className="page-subtitle">{vendors.length} vendors</p>
+          <p className="page-subtitle">{isLoading ? "Loading…" : `${vendors.length} vendors`}</p>
         </div>
         <button className="btn-new" onClick={() => setOpen(true)}>
           <PlusIcon />
@@ -56,6 +60,11 @@ export default function Vendors() {
         </button>
       </div>
 
+      {loadError && <div className="signin-error">{loadError}</div>}
+
+      {vendors.length === 0 && !isLoading && !loadError ? (
+        <div className="empty-state">No vendors yet. Add a vendor to start logging expenses against them.</div>
+      ) : (
       <div className="table-card">
         <table>
           <thead>
@@ -78,6 +87,7 @@ export default function Vendors() {
           </tbody>
         </table>
       </div>
+      )}
 
       {open && (
         <Modal
@@ -88,12 +98,13 @@ export default function Vendors() {
               <button className="btn-secondary" onClick={() => setOpen(false)}>
                 Cancel
               </button>
-              <button className="btn-primary" onClick={submit}>
-                Save vendor
+              <button className="btn-primary" onClick={submit} disabled={submitting}>
+                {submitting ? "Saving…" : "Save vendor"}
               </button>
             </>
           }
         >
+          {formError && <div className="signin-error">{formError}</div>}
           <div>
             <label>Vendor name</label>
             <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Acme Supplies" />

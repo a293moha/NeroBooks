@@ -1,9 +1,12 @@
+import { randomUUID } from "node:crypto";
 import { Router } from "express";
 import { pool } from "../db/pool.js";
 import { withTenantContext } from "../db/context.js";
 import { requireAuth, requireCompanyAccess } from "../auth/middleware.js";
 import { hasPermission } from "../services/permissionService.js";
 import { recordAuditEntry } from "../services/auditService.js";
+import { createCompanyWithOwner } from "../services/companyService.js";
+import { createInitialSubscription, VALID_PLANS, type Plan } from "../services/subscriptionService.js";
 import { asyncHandler } from "../middleware/asyncHandler.js";
 
 export const meRouter = Router();
@@ -32,6 +35,81 @@ meRouter.get(
       )
     );
     res.json(result.rows);
+  })
+);
+
+/**
+ * Self-service onboarding: the one place a brand-new Auth0 identity (from
+ * the "Buy now" flow in SignIn.tsx) turns into a real company. Idempotent
+ * by construction — if this user already holds an active membership
+ * anywhere (a page refresh, a double-submitted form, a retried request
+ * after a network blip), that existing company is returned unchanged
+ * instead of a second one being created. Keyed off req.userId, which
+ * requireAuth derives from the verified Auth0 `sub` claim — never off an
+ * email address, so this can never be tricked into attaching to the wrong
+ * account by an email collision.
+ *
+ * The subscription write happens on every call, not just the "created"
+ * branch: createInitialSubscription is idempotent (ON CONFLICT DO
+ * NOTHING), so if a prior attempt created the company but crashed before
+ * recording the plan, the retry that finds the existing company still
+ * finishes the job instead of leaving a company permanently planless.
+ */
+meRouter.post(
+  "/onboarding",
+  asyncHandler(async (req, res) => {
+    const { companyName, plan, defaultCurrency, countryCode } = req.body ?? {};
+
+    if (typeof companyName !== "string" || companyName.trim().length === 0) {
+      res.status(400).json({ error: "Company name is required." });
+      return;
+    }
+    if (typeof plan !== "string" || !VALID_PLANS.includes(plan as Plan)) {
+      res.status(400).json({ error: `plan must be one of: ${VALID_PLANS.join(", ")}.` });
+      return;
+    }
+
+    const existing = await withTenantContext({ userId: req.userId! }, (client) =>
+      client.query<{ company_id: string }>(
+        `SELECT company_id FROM company_memberships
+         WHERE user_id = $1 AND status = 'active'
+         ORDER BY created_at ASC LIMIT 1`,
+        [req.userId]
+      )
+    );
+
+    let companyId: string;
+    let created: boolean;
+
+    if (existing.rows.length > 0) {
+      companyId = existing.rows[0].company_id;
+      created = false;
+    } else {
+      companyId = randomUUID();
+      created = true;
+
+      await withTenantContext({ userId: req.userId!, companyId }, async (client) => {
+        await createCompanyWithOwner(client, {
+          companyId,
+          ownerUserId: req.userId!,
+          name: companyName.trim(),
+          defaultCurrency: typeof defaultCurrency === "string" ? defaultCurrency.toUpperCase() : undefined,
+          countryCode: typeof countryCode === "string" ? countryCode.toUpperCase() : null,
+        });
+        await recordAuditEntry(client, {
+          companyId,
+          actorUserId: req.userId!,
+          action: "company.created",
+          entityType: "company",
+          entityId: companyId,
+          after: { name: companyName.trim(), plan },
+        });
+      });
+    }
+
+    await createInitialSubscription(companyId, plan as Plan, req.userId!);
+
+    res.status(created ? 201 : 200).json({ companyId, plan, created });
   })
 );
 

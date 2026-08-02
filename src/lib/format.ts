@@ -9,7 +9,7 @@ export function currency(amount: number, currencyCode: string = "USD"): string {
 }
 
 export function invoiceTotal(invoice: Invoice): number {
-  return invoice.lineItems.reduce((sum, item) => sum + item.qty * item.rate, 0);
+  return invoice.total;
 }
 
 export function formatDate(iso: string): string {
