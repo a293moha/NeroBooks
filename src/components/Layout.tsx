@@ -17,6 +17,7 @@ import {
 import NewMenu from "./NewMenu";
 import UserMenu from "./UserMenu";
 import { useAuth } from "../context/AuthContext";
+import { useCompany } from "../context/CompanyContext";
 import { initials } from "../lib/format";
 
 const navGroups = [
@@ -62,6 +63,7 @@ const platformNavGroup = {
 
 export default function Layout() {
   const { user } = useAuth();
+  const { companyName } = useCompany();
   const groups = user?.isPlatformAdmin ? [...navGroups, platformNavGroup] : navGroups;
   const [newMenuOpen, setNewMenuOpen] = useState(false);
   const [userMenuOpen, setUserMenuOpen] = useState(false);
@@ -88,6 +90,11 @@ export default function Layout() {
           <span className="brand-mark">NB</span>
           <span>NeroBooks</span>
         </Link>
+        {companyName && (
+          <span className="cell-muted" style={{ marginLeft: 8, fontSize: 14 }}>
+            {companyName}
+          </span>
+        )}
         <div className="header-search">
           <div style={{ position: "relative" }}>
             <SearchIcon
