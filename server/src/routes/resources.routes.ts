@@ -127,7 +127,8 @@ resourcesRouter.get(
   asyncHandler(async (req, res) => {
     const result = await withTenantContext({ userId: req.userId!, companyId: req.companyId! }, (client) =>
       client.query(
-        `SELECT id, invoice_number, customer_id, status, total, currency
+        `SELECT id, invoice_number, customer_id, issue_date, due_date, status, total, subtotal, currency,
+              amount_paid, notes, last_edited_at
        FROM invoices WHERE id = $1 AND company_id = $2 AND deleted_at IS NULL`,
         [req.params.invoiceId, req.companyId]
       )
@@ -411,6 +412,80 @@ resourcesRouter.get(
   })
 );
 
+const EXPENSE_HISTORY_FIELDS: Record<string, string> = {
+  amount: "Amount",
+  currency: "Currency",
+  date: "Date",
+  memo: "Memo",
+  payment_method: "Payment method",
+  status: "Status",
+  vendor_id: "Vendor",
+  expense_category_id: "Category",
+};
+
+// Per-field before/after diff, built from audit_logs rather than a
+// dedicated history table -- 0022 removed the DB-level immutability that
+// used to make this unnecessary, so this endpoint (plus the audit entry
+// every PATCH above already writes) is now the only record of what an
+// expense looked like before an edit. vendor_id/expense_category_id are
+// resolved to their *current* name for readability; if a vendor/category
+// was later renamed, history shows the current name, not the name at the
+// time of the edit -- acceptable for a lightweight audit view, not a
+// point-in-time ledger.
+resourcesRouter.get(
+  "/expenses/:expenseId/history",
+  asyncHandler(async (req, res) => {
+    const result = await withTenantContext({ userId: req.userId!, companyId: req.companyId! }, async (client) => {
+      const expense = await client.query("SELECT id FROM expenses WHERE id = $1 AND company_id = $2", [
+        req.params.expenseId,
+        req.companyId,
+      ]);
+      if (expense.rows.length === 0) return null;
+
+      const [logs, vendors, categories] = await Promise.all([
+        client.query<{ id: string; action: string; before_data: Record<string, unknown> | null; after_data: Record<string, unknown> | null; created_at: string }>(
+          `SELECT id, action, before_data, after_data, created_at
+           FROM audit_logs
+           WHERE company_id = $1 AND entity_type = 'expense' AND entity_id = $2
+           ORDER BY created_at ASC`,
+          [req.companyId, req.params.expenseId]
+        ),
+        client.query<{ id: string; name: string }>("SELECT id, name FROM vendors WHERE company_id = $1", [req.companyId]),
+        client.query<{ id: string; name: string }>(
+          "SELECT id, name FROM expense_categories WHERE company_id = $1 OR company_id IS NULL",
+          [req.companyId]
+        ),
+      ]);
+
+      const vendorNames = new Map(vendors.rows.map((v) => [v.id, v.name]));
+      const categoryNames = new Map(categories.rows.map((c) => [c.id, c.name]));
+      const resolve = (field: string, value: unknown) => {
+        if (value === null || value === undefined) return null;
+        if (field === "vendor_id") return vendorNames.get(value as string) ?? null;
+        if (field === "expense_category_id") return categoryNames.get(value as string) ?? null;
+        return value;
+      };
+
+      return logs.rows.map((row) => {
+        const before = row.before_data;
+        const after = row.after_data;
+        const changes: { field: string; label: string; from: unknown; to: unknown }[] = [];
+        if (before && after) {
+          for (const [column, label] of Object.entries(EXPENSE_HISTORY_FIELDS)) {
+            if (JSON.stringify(before[column]) !== JSON.stringify(after[column])) {
+              changes.push({ field: column, label, from: resolve(column, before[column]), to: resolve(column, after[column]) });
+            }
+          }
+        }
+        return { id: row.id, action: row.action, createdAt: row.created_at, changes };
+      });
+    });
+
+    if (!result) return notFound(res);
+    res.json(result);
+  })
+);
+
 async function resolveExpenseCategoryId(
   client: import("pg").PoolClient,
   companyId: string,
@@ -536,9 +611,15 @@ resourcesRouter.patch(
           return result.rows[0];
         }
 
-        // Plain field edit (only meaningful while pending; the immutable
-        // trigger on 0011 rejects amount/currency/vendor/category/date
-        // changes once approved/reimbursed/rejected — caught below as 409).
+        // Plain field edit -- as of 0022, allowed at any status (not just
+        // pending); the client warns before editing a finalized expense,
+        // but the write itself is never blocked here. Full before/after is
+        // recorded in audit_logs below, which is the only safety net now
+        // that the DB trigger no longer refuses these writes.
+        if (body.amount !== undefined && (typeof body.amount !== "number" || !Number.isFinite(body.amount) || body.amount < 0)) {
+          return "invalid_amount" as const;
+        }
+
         const setClauses: string[] = [];
         const values: unknown[] = [];
         if (typeof body.memo === "string") {
@@ -552,6 +633,19 @@ resourcesRouter.patch(
         if (typeof body.paymentMethod === "string") {
           values.push(body.paymentMethod);
           setClauses.push(`payment_method = $${values.length}`);
+        }
+        if (typeof body.date === "string" && body.date) {
+          values.push(body.date);
+          setClauses.push(`date = $${values.length}`);
+        }
+        if ("vendorId" in body) {
+          values.push(body.vendorId || null);
+          setClauses.push(`vendor_id = $${values.length}`);
+        }
+        if (typeof body.category === "string" && body.category.trim()) {
+          const categoryId = await resolveExpenseCategoryId(client, req.companyId!, body.category.trim());
+          values.push(categoryId);
+          setClauses.push(`expense_category_id = $${values.length}`);
         }
         if (setClauses.length === 0) return "no_fields" as const;
 
@@ -569,7 +663,7 @@ resourcesRouter.patch(
           before: before.rows[0],
           after: result.rows[0],
         });
-        return result.rows[0];
+        return { ...result.rows[0], category: typeof body.category === "string" ? body.category.trim() : undefined };
       });
 
       if (updated === "not_found") return notFound(res);
@@ -579,6 +673,10 @@ resourcesRouter.patch(
       }
       if (updated === "no_fields") {
         res.status(400).json({ error: "No recognized fields to update." });
+        return;
+      }
+      if (updated === "invalid_amount") {
+        res.status(400).json({ error: "amount must be a non-negative number." });
         return;
       }
       res.json(updated);
@@ -638,7 +736,7 @@ resourcesRouter.get(
     const status = typeof req.query.status === "string" ? req.query.status : null;
     const result = await withTenantContext({ userId: req.userId!, companyId: req.companyId! }, (client) =>
       client.query(
-        `SELECT id, invoice_number, customer_id, issue_date, due_date, status, currency, total, amount_paid
+        `SELECT id, invoice_number, customer_id, issue_date, due_date, status, currency, total, amount_paid, last_edited_at
        FROM invoices
        WHERE company_id = $1 AND deleted_at IS NULL AND ($2::text IS NULL OR status = $2)
        ORDER BY issue_date DESC, created_at DESC`,
@@ -797,6 +895,146 @@ resourcesRouter.post(
     } catch (err) {
       if (err instanceof Error && /duplicate key value/.test(err.message)) {
         res.status(409).json({ error: "Could not allocate a unique invoice number. Please retry." });
+        return;
+      }
+      throw err;
+    }
+  })
+);
+
+const INVOICE_STATUSES = ["draft", "sent", "paid", "partially_paid", "overdue", "void"];
+
+// Full-record edit -- distinct from the /status endpoint below, which is
+// the constrained "mark as sent/paid" quick action and enforces
+// INVOICE_STATUS_TRANSITIONS. This endpoint is the "fix anything on this
+// invoice" form: per 0022, customer/dates/line items/amounts are editable
+// at any status (not just draft), so it does not walk that transition
+// graph -- it only checks that the requested status is a real status and,
+// if the edit is entering 'sent' for the first time, that the actor still
+// holds invoices.send (closing the obvious bypass of using this form to
+// send an invoice without that permission). Every write here is recorded
+// in audit_logs with full before/after (invoice fields + line items) and
+// stamps last_edited_at, since the database no longer refuses these edits
+// on its own -- see 0022's header comment.
+resourcesRouter.patch(
+  "/invoices/:invoiceId",
+  asyncHandler(async (req, res) => {
+    const body = req.body ?? {};
+    const lineItems = validateLineItems(body.lineItems);
+
+    if (typeof body.customerId !== "string") {
+      res.status(400).json({ error: "customerId is required." });
+      return;
+    }
+    if (!body.issueDate || !body.dueDate) {
+      res.status(400).json({ error: "issueDate and dueDate are required." });
+      return;
+    }
+    if (new Date(body.dueDate) < new Date(body.issueDate)) {
+      res.status(400).json({ error: "Due date must be on or after the issue date." });
+      return;
+    }
+    if (!lineItems) {
+      res.status(400).json({ error: "At least one valid line item is required." });
+      return;
+    }
+    if (body.status !== undefined && !INVOICE_STATUSES.includes(body.status)) {
+      res.status(400).json({ error: "status is not a recognized invoice status." });
+      return;
+    }
+
+    try {
+      const updated = await withTenantContext({ userId: req.userId!, companyId: req.companyId! }, async (client) => {
+        const allowed = await hasPermission(client, req.companyId!, req.userId!, "invoices.create");
+        if (!allowed) return "forbidden" as const;
+
+        const before = await client.query("SELECT * FROM invoices WHERE id = $1 AND company_id = $2 AND deleted_at IS NULL", [
+          req.params.invoiceId,
+          req.companyId,
+        ]);
+        if (before.rows.length === 0) return "not_found" as const;
+
+        const nextStatus = body.status ?? before.rows[0].status;
+        if (nextStatus === "sent" && before.rows[0].status !== "sent") {
+          const canSend = await hasPermission(client, req.companyId!, req.userId!, "invoices.send");
+          if (!canSend) return "forbidden" as const;
+        }
+
+        const customer = await client.query("SELECT id FROM customers WHERE id = $1 AND company_id = $2 AND deleted_at IS NULL", [
+          body.customerId,
+          req.companyId,
+        ]);
+        if (customer.rows.length === 0) return "no_customer" as const;
+
+        const beforeItems = await client.query(
+          "SELECT id, description, quantity, unit_price FROM invoice_items WHERE invoice_id = $1 ORDER BY sort_order",
+          [req.params.invoiceId]
+        );
+
+        const subtotal = lineItems.reduce((sum, li) => sum + li.quantity * li.unitPrice, 0);
+        const currency = typeof body.currency === "string" ? body.currency.toUpperCase() : before.rows[0].currency;
+        const taxTotal = Number(before.rows[0].tax_total);
+
+        const result = await client.query(
+          `UPDATE invoices
+           SET customer_id = $1, issue_date = $2, due_date = $3, status = $4,
+               currency = $5, subtotal = $6, total = $6 + $7, notes = $8, last_edited_at = now()
+           WHERE id = $9 AND company_id = $10
+           RETURNING *`,
+          [
+            body.customerId,
+            body.issueDate,
+            body.dueDate,
+            nextStatus,
+            currency,
+            subtotal,
+            taxTotal,
+            body.notes ?? before.rows[0].notes,
+            req.params.invoiceId,
+            req.companyId,
+          ]
+        );
+
+        await client.query("DELETE FROM invoice_items WHERE invoice_id = $1", [req.params.invoiceId]);
+        for (const [index, item] of lineItems.entries()) {
+          await client.query(
+            `INSERT INTO invoice_items (company_id, invoice_id, description, quantity, unit_price, sort_order)
+             VALUES ($1, $2, $3, $4, $5, $6)`,
+            [req.companyId, req.params.invoiceId, item.description, item.quantity, item.unitPrice, index]
+          );
+        }
+
+        const afterItems = await client.query(
+          "SELECT id, description, quantity, unit_price FROM invoice_items WHERE invoice_id = $1 ORDER BY sort_order",
+          [req.params.invoiceId]
+        );
+
+        await recordAuditEntry(client, {
+          companyId: req.companyId!,
+          actorUserId: req.userId!,
+          action: "invoice.updated",
+          entityType: "invoice",
+          entityId: req.params.invoiceId,
+          before: { ...before.rows[0], lineItems: beforeItems.rows },
+          after: { ...result.rows[0], lineItems: afterItems.rows },
+        });
+
+        return { ...result.rows[0], lineItems: afterItems.rows };
+      });
+
+      if (updated === "forbidden") {
+        res.status(403).json({ error: "Access denied." });
+        return;
+      }
+      if (updated === "not_found") return notFound(res);
+      if (updated === "no_customer") {
+        res.status(422).json({ error: "That customer does not belong to this company." });
+        return;
+      }
+      res.json(updated);
+    } catch (err) {
+      if (err instanceof Error && /due_date/.test(err.message)) {
+        res.status(400).json({ error: "Due date must be on or after the issue date." });
         return;
       }
       throw err;

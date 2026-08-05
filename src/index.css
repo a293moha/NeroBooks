@@ -599,6 +599,62 @@ textarea:focus {
   margin-top: 6px;
 }
 
+/* ---------- Row actions (edit/history icon buttons) ---------- */
+.row-actions {
+  display: flex;
+  gap: 6px;
+  justify-content: flex-end;
+}
+
+.icon-btn {
+  padding: 6px !important;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.clickable-row {
+  cursor: pointer;
+}
+
+.field-row p {
+  margin: 0;
+  padding: 9px 0;
+  font-size: 14px;
+  color: var(--text-primary);
+}
+
+/* ---------- Expense edit history ---------- */
+.history-list {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.history-entry {
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 10px;
+}
+
+.history-entry:last-child {
+  border-bottom: none;
+  padding-bottom: 0;
+}
+
+.history-entry-date {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text-muted);
+  margin-bottom: 4px;
+}
+
+.history-entry ul {
+  margin: 0;
+  padding-left: 18px;
+  font-size: 13.5px;
+  color: var(--text-primary);
+}
+
 .empty-state {
   text-align: center;
   padding: 48px 20px;

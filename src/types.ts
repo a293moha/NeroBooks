@@ -27,6 +27,8 @@ export interface Invoice {
    * is never persisted and will not survive a refetch.
    */
   recurring?: boolean;
+  /** Set only by the edit form (never by status transitions/payments) — when this invoice's content was last changed after issuing. */
+  lastEditedAt?: string | null;
 }
 
 export interface TeamMember {
@@ -63,6 +65,8 @@ export type ExpenseCategory =
   | "Insurance"
   | "Other";
 
+export type ExpenseStatus = "pending" | "approved" | "reimbursed" | "rejected";
+
 export interface Expense {
   id: string;
   date: string;
@@ -71,6 +75,21 @@ export interface Expense {
   amount: number;
   memo?: string;
   paymentMethod: string;
+  status: ExpenseStatus;
+}
+
+export interface ExpenseHistoryChange {
+  field: string;
+  label: string;
+  from: string | number | null;
+  to: string | number | null;
+}
+
+export interface ExpenseHistoryEntry {
+  id: string;
+  action: string;
+  createdAt: string;
+  changes: ExpenseHistoryChange[];
 }
 
 export type AccountType = "Asset" | "Liability" | "Equity" | "Income" | "Expense";

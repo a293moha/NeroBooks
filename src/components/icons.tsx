@@ -107,3 +107,17 @@ export const PlusIcon = (p: SVGProps<SVGSVGElement>) => (
     <path d="M12 5v14M5 12h14" />
   </Icon>
 );
+
+export const EditIcon = (p: SVGProps<SVGSVGElement>) => (
+  <Icon {...p}>
+    <path d="M4 20h4l10.5-10.5a2 2 0 0 0 0-2.8l-1.2-1.2a2 2 0 0 0-2.8 0L4 16v4z" />
+    <path d="M13.5 6.5l3 3" />
+  </Icon>
+);
+
+export const HistoryIcon = (p: SVGProps<SVGSVGElement>) => (
+  <Icon {...p}>
+    <circle cx="12" cy="12" r="9" />
+    <path d="M12 7v5l3.5 2" />
+  </Icon>
+);

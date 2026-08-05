@@ -1,5 +1,16 @@
 import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from "react";
-import type { Account, Customer, Expense, ExpenseCategory, Invoice, InvoiceStatus, Transaction, Vendor } from "../types";
+import type {
+  Account,
+  Customer,
+  Expense,
+  ExpenseCategory,
+  ExpenseHistoryEntry,
+  Invoice,
+  InvoiceLineItem,
+  InvoiceStatus,
+  Transaction,
+  Vendor,
+} from "../types";
 import { seedAccounts, seedTransactions } from "../lib/seed";
 import { useCompany } from "./CompanyContext";
 import { useApiClient, ApiError } from "../lib/apiClient";
@@ -43,6 +54,13 @@ interface InvoiceRow {
   currency: string;
   total: string;
   amount_paid: string;
+  last_edited_at: string | null;
+}
+interface InvoiceItemRow {
+  id: string;
+  description: string;
+  quantity: string;
+  unit_price: string;
 }
 interface ExpenseRow {
   id: string;
@@ -83,6 +101,22 @@ export interface NewInvoiceInput {
   currency?: string;
   notes?: string;
 }
+export interface EditInvoiceInput {
+  customerId: string;
+  issueDate: string;
+  dueDate: string;
+  status: InvoiceStatus;
+  lineItems: { description: string; qty: number; rate: number }[];
+  currency?: string;
+}
+export interface EditExpenseInput {
+  date: string;
+  vendorId: string;
+  category: ExpenseCategory;
+  amount: number;
+  paymentMethod: string;
+  memo?: string;
+}
 
 interface StoreShape {
   customers: Customer[];
@@ -98,8 +132,12 @@ interface DataContextValue extends StoreShape {
   error: string | null;
   addInvoice: (input: NewInvoiceInput) => Promise<void>;
   updateInvoiceStatus: (id: string, status: InvoiceStatus) => Promise<void>;
+  updateInvoice: (id: string, input: EditInvoiceInput) => Promise<void>;
+  fetchInvoiceItems: (id: string) => Promise<InvoiceLineItem[]>;
   addCustomer: (input: NewCustomerInput) => Promise<void>;
   addExpense: (input: NewExpenseInput) => Promise<void>;
+  updateExpense: (id: string, input: EditExpenseInput) => Promise<void>;
+  fetchExpenseHistory: (id: string) => Promise<ExpenseHistoryEntry[]>;
   addVendor: (input: NewVendorInput) => Promise<void>;
 }
 
@@ -167,6 +205,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
           total,
           lineItems: [],
           currency: row.currency,
+          lastEditedAt: row.last_edited_at,
         };
       });
 
@@ -184,6 +223,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
           amount,
           memo: row.memo ?? undefined,
           paymentMethod: PAYMENT_METHOD_FROM_BACKEND[row.payment_method] ?? row.payment_method,
+          status: row.status as Expense["status"],
         };
       });
 
@@ -273,6 +313,42 @@ export function DataProvider({ children }: { children: ReactNode }) {
     await refetch();
   };
 
+  const updateInvoice = async (id: string, input: EditInvoiceInput) => {
+    await api.patch(`/api/companies/${companyId}/invoices/${id}`, {
+      customerId: input.customerId,
+      issueDate: input.issueDate,
+      dueDate: input.dueDate,
+      status: input.status,
+      lineItems: input.lineItems.map((li) => ({ description: li.description, quantity: li.qty, unitPrice: li.rate })),
+      currency: input.currency,
+    });
+    await refetch();
+  };
+
+  const fetchInvoiceItems = async (id: string): Promise<InvoiceLineItem[]> => {
+    const items = await api.get<InvoiceItemRow[]>(`/api/companies/${companyId}/invoices/${id}/items`);
+    return items.map((item) => ({
+      id: item.id,
+      description: item.description,
+      qty: Number(item.quantity),
+      rate: Number(item.unit_price),
+    }));
+  };
+
+  const updateExpense = async (id: string, input: EditExpenseInput) => {
+    await api.patch(`/api/companies/${companyId}/expenses/${id}`, {
+      date: input.date,
+      vendorId: input.vendorId || undefined,
+      category: input.category,
+      amount: input.amount,
+      paymentMethod: PAYMENT_METHOD_TO_BACKEND[input.paymentMethod] ?? "credit_card",
+      memo: input.memo,
+    });
+    await refetch();
+  };
+
+  const fetchExpenseHistory = (id: string) => api.get<ExpenseHistoryEntry[]>(`/api/companies/${companyId}/expenses/${id}/history`);
+
   return (
     <DataContext.Provider
       value={{
@@ -286,8 +362,12 @@ export function DataProvider({ children }: { children: ReactNode }) {
         error,
         addInvoice,
         updateInvoiceStatus,
+        updateInvoice,
+        fetchInvoiceItems,
         addCustomer,
         addExpense,
+        updateExpense,
+        fetchExpenseHistory,
         addVendor,
       }}
     >

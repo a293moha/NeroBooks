@@ -153,6 +153,135 @@ test("creating an invoice with status 'sent' directly succeeds, with line items 
   assert.equal(items.body[0].description, "10kgs of coffee");
 });
 
+// ---------- Invoice editing (0022: editable at any status) ----------
+
+test("editing a draft invoice updates customer/dates/line items/total in place, without changing the invoice number", async () => {
+  const before = await authed(a.token).get(`/api/companies/${a.companyId}/invoices/${a.invoiceId}`);
+  assert.equal(before.status, 200);
+  const originalNumber = before.body.invoice_number;
+  assert.equal(before.body.last_edited_at, null);
+
+  const edited = await authed(a.token).patch(`/api/companies/${a.companyId}/invoices/${a.invoiceId}`).send({
+    customerId: a.customerId,
+    issueDate: "2026-08-01",
+    dueDate: "2026-08-31",
+    lineItems: [{ description: "Edited line item", quantity: 3, unitPrice: 200 }],
+  });
+  assert.equal(edited.status, 200);
+  assert.equal(edited.body.invoice_number, originalNumber);
+  assert.equal(Number(edited.body.total), 600);
+  assert.ok(edited.body.last_edited_at, "last_edited_at should be stamped by the edit endpoint");
+  assert.equal(edited.body.lineItems.length, 1);
+  assert.equal(edited.body.lineItems[0].description, "Edited line item");
+});
+
+test("editing a Sent invoice's customer/line items and jumping status straight to Paid both succeed (warn-but-allow, not DB-blocked)", async () => {
+  const created = await authed(a.token).post(`/api/companies/${a.companyId}/invoices`).send({
+    customerId: a.customerId,
+    issueDate: "2026-08-02",
+    dueDate: "2026-09-01",
+    status: "sent",
+    lineItems: [{ description: "Original line item", quantity: 1, unitPrice: 1000 }],
+  });
+  assert.equal(created.status, 201);
+  const invoiceId = created.body.id;
+  const originalNumber = created.body.invoice_number;
+
+  const edited = await authed(a.token).patch(`/api/companies/${a.companyId}/invoices/${invoiceId}`).send({
+    customerId: a.customerId,
+    issueDate: "2026-08-02",
+    dueDate: "2026-09-01",
+    status: "paid",
+    lineItems: [{ description: "Corrected after sending", quantity: 2, unitPrice: 500 }],
+  });
+  assert.equal(edited.status, 200);
+  assert.equal(edited.body.status, "paid");
+  assert.equal(edited.body.invoice_number, originalNumber);
+  assert.equal(Number(edited.body.total), 1000);
+  assert.equal(edited.body.lineItems[0].description, "Corrected after sending");
+
+  const audit = await withTenantContext({ userId: a.ownerId, companyId: a.companyId }, (c) =>
+    c.query(
+      "SELECT before_data, after_data FROM audit_logs WHERE entity_type = 'invoice' AND entity_id = $1 AND action = 'invoice.updated' ORDER BY created_at DESC LIMIT 1",
+      [invoiceId]
+    )
+  );
+  assert.equal(audit.rows.length, 1);
+  assert.equal(audit.rows[0].before_data.status, "sent");
+  assert.equal(audit.rows[0].after_data.status, "paid");
+});
+
+test("editing an invoice rejects a due date before the issue date and an unrecognized status", async () => {
+  const badDates = await authed(a.token).patch(`/api/companies/${a.companyId}/invoices/${a.invoiceId}`).send({
+    customerId: a.customerId,
+    issueDate: "2026-08-31",
+    dueDate: "2026-08-01",
+    lineItems: [{ description: "x", quantity: 1, unitPrice: 1 }],
+  });
+  assert.equal(badDates.status, 400);
+
+  const badStatus = await authed(a.token).patch(`/api/companies/${a.companyId}/invoices/${a.invoiceId}`).send({
+    customerId: a.customerId,
+    issueDate: "2026-08-01",
+    dueDate: "2026-08-31",
+    status: "not_a_real_status",
+    lineItems: [{ description: "x", quantity: 1, unitPrice: 1 }],
+  });
+  assert.equal(badStatus.status, 400);
+});
+
+// ---------- Expense editing & history (0022: editable at any status) ----------
+
+test("editing a pending expense updates vendor/category/date/amount/memo/payment method in place", async () => {
+  const edited = await authed(a.token).patch(`/api/companies/${a.companyId}/expenses/${a.expenseId}`).send({
+    date: "2026-08-03",
+    category: "Travel",
+    amount: 77,
+    paymentMethod: "cash",
+    memo: "Edited memo",
+  });
+  assert.equal(edited.status, 200);
+  assert.equal(Number(edited.body.amount), 77);
+  assert.equal(edited.body.payment_method, "cash");
+  assert.equal(edited.body.memo, "Edited memo");
+  assert.equal(edited.body.category, "Travel");
+});
+
+test("editing an already-approved expense still succeeds (warn-but-allow), and its history shows the before/after diff", async () => {
+  const approve = await authed(a.token)
+    .patch(`/api/companies/${a.companyId}/expenses/${a.expenseId}`)
+    .send({ action: "approve" });
+  assert.equal(approve.status, 200);
+  assert.equal(approve.body.status, "approved");
+
+  const edited = await authed(a.token).patch(`/api/companies/${a.companyId}/expenses/${a.expenseId}`).send({
+    amount: 50000,
+  });
+  assert.equal(edited.status, 200);
+  assert.equal(Number(edited.body.amount), 50000);
+
+  const history = await authed(a.token).get(`/api/companies/${a.companyId}/expenses/${a.expenseId}/history`);
+  assert.equal(history.status, 200);
+  assert.ok(history.body.length >= 3); // created, approved, amount-edited
+
+  const created = history.body[0];
+  assert.equal(created.action, "expense.created");
+  assert.deepEqual(created.changes, []);
+
+  const amountEdit = history.body[history.body.length - 1];
+  assert.equal(amountEdit.action, "expense.updated");
+  const amountChange = amountEdit.changes.find((c: { field: string }) => c.field === "amount");
+  assert.ok(amountChange, "expected an amount change entry in history");
+  assert.equal(Number(amountChange.to), 50000);
+});
+
+test("expense amount must be a non-negative number on edit", async () => {
+  const res = await authed(a.token).patch(`/api/companies/${a.companyId}/expenses/${a.expenseId}`).send({
+    amount: -5,
+  });
+  assert.equal(res.status, 400);
+});
+
 // ---------- Cross-company denial: list ----------
 
 test("attack: User A cannot list Company B's customers/invoices/expenses", async () => {

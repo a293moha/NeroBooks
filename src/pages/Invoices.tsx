@@ -9,7 +9,7 @@ import { ApiError } from "../lib/apiClient";
 import Modal from "../components/Modal";
 import StatusBadge from "../components/StatusBadge";
 import UpgradeBanner from "../components/UpgradeBanner";
-import { PlusIcon } from "../components/icons";
+import { EditIcon, PlusIcon } from "../components/icons";
 import type { Invoice, InvoiceLineItem, InvoiceStatus } from "../types";
 
 const today = () => new Date().toISOString().slice(0, 10);
@@ -30,7 +30,8 @@ const NEXT_ACTION: Partial<Record<InvoiceStatus, { label: string; next: InvoiceS
 };
 
 export default function Invoices() {
-  const { invoices, customers, addInvoice, updateInvoiceStatus, isLoading, error: loadError } = useData();
+  const { invoices, customers, addInvoice, updateInvoiceStatus, updateInvoice, fetchInvoiceItems, isLoading, error: loadError } =
+    useData();
   const { currencyCode, currencyOptions } = useCurrency();
   const { user } = useAuth();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -40,6 +41,8 @@ export default function Invoices() {
   const [formError, setFormError] = useState("");
   const [actionError, setActionError] = useState("");
   const [actioningId, setActioningId] = useState<string | null>(null);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editStatus, setEditStatus] = useState<InvoiceStatus>("draft");
 
   const [customerId, setCustomerId] = useState(customers[0]?.id ?? "");
   const [issueDate, setIssueDate] = useState(today());
@@ -78,6 +81,13 @@ export default function Invoices() {
     setLineItems([emptyLine()]);
     setInvoiceCurrency(currencyCode);
     setFormError("");
+    setEditingId(null);
+    setEditStatus("draft");
+  };
+
+  const closeModal = () => {
+    reset();
+    setOpen(false);
   };
 
   const submit = async (status: "draft" | "sent") => {
@@ -93,12 +103,55 @@ export default function Invoices() {
         lineItems: lineItems.filter((l) => l.description.trim()),
         currency: canUseMultiCurrency ? invoiceCurrency : undefined,
       });
-      reset();
-      setOpen(false);
+      closeModal();
     } catch (err) {
       setFormError(err instanceof ApiError ? err.message : "Could not save this invoice. Please try again.");
     } finally {
       setSubmitting(false);
+    }
+  };
+
+  const submitEdit = async () => {
+    if (!editingId || !customerId || lineItems.every((l) => !l.description.trim())) return;
+    setSubmitting(true);
+    setFormError("");
+    try {
+      await updateInvoice(editingId, {
+        customerId,
+        issueDate,
+        dueDate,
+        status: editStatus,
+        lineItems: lineItems.filter((l) => l.description.trim()),
+        currency: canUseMultiCurrency ? invoiceCurrency : undefined,
+      });
+      closeModal();
+    } catch (err) {
+      setFormError(err instanceof ApiError ? err.message : "Could not save changes. Please try again.");
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const startEdit = async (invoice: Invoice) => {
+    if (invoice.status === "paid") {
+      const confirmed = window.confirm(
+        "This invoice is marked Paid. Editing it changes financial records that have already been finalized. Continue?"
+      );
+      if (!confirmed) return;
+    }
+    setFormError("");
+    setCustomerId(invoice.customerId);
+    setIssueDate(invoice.issueDate.slice(0, 10));
+    setDueDate(invoice.dueDate.slice(0, 10));
+    setInvoiceCurrency(invoice.currency ?? currencyCode);
+    setEditStatus(invoice.status);
+    setEditingId(invoice.id);
+    setOpen(true);
+    try {
+      const items = await fetchInvoiceItems(invoice.id);
+      setLineItems(items.length > 0 ? items : [emptyLine()]);
+    } catch (err) {
+      setFormError(err instanceof ApiError ? err.message : "Could not load this invoice's line items.");
     }
   };
 
@@ -174,7 +227,14 @@ export default function Invoices() {
                 const action = NEXT_ACTION[inv.status];
                 return (
                   <tr key={inv.id}>
-                    <td>{inv.number}</td>
+                    <td>
+                      {inv.number}
+                      {inv.lastEditedAt && (
+                        <div className="cell-muted" style={{ fontSize: 11, marginTop: 2 }}>
+                          Last edited: {formatDate(inv.lastEditedAt)}
+                        </div>
+                      )}
+                    </td>
                     <td className="cell-muted">{customerName(inv.customerId)}</td>
                     <td className="cell-muted">{formatDate(inv.issueDate)}</td>
                     <td className="cell-muted">{formatDate(inv.dueDate)}</td>
@@ -190,16 +250,26 @@ export default function Invoices() {
                       )}
                     </td>
                     <td>
-                      {action && (
+                      <div className="row-actions">
+                        {action && (
+                          <button
+                            className="btn-secondary"
+                            style={{ padding: "4px 10px", fontSize: 12 }}
+                            disabled={actioningId === inv.id}
+                            onClick={() => runNextAction(inv)}
+                          >
+                            {actioningId === inv.id ? "…" : action.label}
+                          </button>
+                        )}
                         <button
-                          className="btn-secondary"
-                          style={{ padding: "4px 10px", fontSize: 12 }}
-                          disabled={actioningId === inv.id}
-                          onClick={() => runNextAction(inv)}
+                          className="btn-secondary icon-btn"
+                          onClick={() => startEdit(inv)}
+                          title="Edit invoice"
+                          aria-label="Edit invoice"
                         >
-                          {actioningId === inv.id ? "…" : action.label}
+                          <EditIcon width={14} height={14} />
                         </button>
-                      )}
+                      </div>
                     </td>
                   </tr>
                 );
@@ -211,23 +281,45 @@ export default function Invoices() {
 
       {open && (
         <Modal
-          title="New invoice"
-          onClose={() => setOpen(false)}
+          title={editingId ? "Edit invoice" : "New invoice"}
+          onClose={closeModal}
           footer={
-            <>
-              <button className="btn-secondary" onClick={() => setOpen(false)}>
-                Cancel
-              </button>
-              <button className="btn-secondary" onClick={() => submit("draft")} disabled={submitting}>
-                {submitting ? "Saving…" : "Save as draft"}
-              </button>
-              <button className="btn-primary" onClick={() => submit("sent")} disabled={submitting}>
-                {submitting ? "Saving…" : "Save & send"}
-              </button>
-            </>
+            editingId ? (
+              <>
+                <button className="btn-secondary" onClick={closeModal}>
+                  Cancel
+                </button>
+                <button className="btn-primary" onClick={submitEdit} disabled={submitting}>
+                  {submitting ? "Saving…" : "Save changes"}
+                </button>
+              </>
+            ) : (
+              <>
+                <button className="btn-secondary" onClick={closeModal}>
+                  Cancel
+                </button>
+                <button className="btn-secondary" onClick={() => submit("draft")} disabled={submitting}>
+                  {submitting ? "Saving…" : "Save as draft"}
+                </button>
+                <button className="btn-primary" onClick={() => submit("sent")} disabled={submitting}>
+                  {submitting ? "Saving…" : "Save & send"}
+                </button>
+              </>
+            )
           }
         >
           {formError && <div className="signin-error">{formError}</div>}
+          {editingId && (
+            <div>
+              <label>Status</label>
+              <select value={editStatus} onChange={(e) => setEditStatus(e.target.value as InvoiceStatus)}>
+                <option value="draft">Draft</option>
+                <option value="sent">Sent</option>
+                <option value="paid">Paid</option>
+                <option value="overdue">Overdue</option>
+              </select>
+            </div>
+          )}
           <div className="field-row">
             <div>
               <label>Customer</label>
