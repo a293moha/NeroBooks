@@ -701,6 +701,15 @@ resourcesRouter.delete(
         ]);
         if (before.rows.length === 0) return "not_found" as const;
 
+        // Reuses expenses.create rather than a dedicated expenses.delete
+        // permission (which doesn't exist in the catalog): the DELETE
+        // itself is already restricted to pending-only by
+        // check_expenses_immutable, so this amounts to "if you can submit
+        // an expense, you can retract your own unprocessed one" -- a
+        // materially lower-risk action than expenses.approve.
+        const allowed = await hasPermission(client, req.companyId!, req.userId!, "expenses.create");
+        if (!allowed) return "forbidden" as const;
+
         await client.query("DELETE FROM expenses WHERE id = $1 AND company_id = $2", [
           req.params.expenseId,
           req.companyId,
@@ -717,6 +726,10 @@ resourcesRouter.delete(
       });
 
       if (deleted === "not_found") return notFound(res);
+      if (deleted === "forbidden") {
+        res.status(403).json({ error: "Access denied." });
+        return;
+      }
       res.status(204).end();
     } catch (err) {
       if (err instanceof Error && /only a pending expense can be deleted/.test(err.message)) {

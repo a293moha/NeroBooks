@@ -133,10 +133,12 @@ interface DataContextValue extends StoreShape {
   addInvoice: (input: NewInvoiceInput) => Promise<void>;
   updateInvoiceStatus: (id: string, status: InvoiceStatus) => Promise<void>;
   updateInvoice: (id: string, input: EditInvoiceInput) => Promise<void>;
+  deleteInvoice: (id: string) => Promise<void>;
   fetchInvoiceItems: (id: string) => Promise<InvoiceLineItem[]>;
   addCustomer: (input: NewCustomerInput) => Promise<void>;
   addExpense: (input: NewExpenseInput) => Promise<void>;
   updateExpense: (id: string, input: EditExpenseInput) => Promise<void>;
+  deleteExpense: (id: string) => Promise<void>;
   fetchExpenseHistory: (id: string) => Promise<ExpenseHistoryEntry[]>;
   addVendor: (input: NewVendorInput) => Promise<void>;
 }
@@ -319,7 +321,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
       issueDate: input.issueDate,
       dueDate: input.dueDate,
       status: input.status,
-      lineItems: input.lineItems.map((li) => ({ description: li.description, quantity: li.qty, unitPrice: li.rate })),
+      lineItems: input.lineItems.map((li) => ({ description: li.description, qty: li.qty, rate: li.rate })),
       currency: input.currency,
     });
     await refetch();
@@ -349,6 +351,16 @@ export function DataProvider({ children }: { children: ReactNode }) {
 
   const fetchExpenseHistory = (id: string) => api.get<ExpenseHistoryEntry[]>(`/api/companies/${companyId}/expenses/${id}/history`);
 
+  const deleteInvoice = async (id: string) => {
+    await api.del(`/api/companies/${companyId}/invoices/${id}`);
+    await refetch();
+  };
+
+  const deleteExpense = async (id: string) => {
+    await api.del(`/api/companies/${companyId}/expenses/${id}`);
+    await refetch();
+  };
+
   return (
     <DataContext.Provider
       value={{
@@ -363,10 +375,12 @@ export function DataProvider({ children }: { children: ReactNode }) {
         addInvoice,
         updateInvoiceStatus,
         updateInvoice,
+        deleteInvoice,
         fetchInvoiceItems,
         addCustomer,
         addExpense,
         updateExpense,
+        deleteExpense,
         fetchExpenseHistory,
         addVendor,
       }}

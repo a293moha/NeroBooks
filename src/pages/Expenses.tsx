@@ -5,7 +5,8 @@ import { useCurrency } from "../context/CurrencyContext";
 import { currency, formatDate } from "../lib/format";
 import { ApiError } from "../lib/apiClient";
 import Modal from "../components/Modal";
-import { EditIcon, HistoryIcon, PlusIcon } from "../components/icons";
+import Toast from "../components/Toast";
+import { EditIcon, HistoryIcon, PlusIcon, TrashIcon } from "../components/icons";
 import type { Expense, ExpenseCategory, ExpenseHistoryEntry } from "../types";
 
 const categories: ExpenseCategory[] = [
@@ -30,7 +31,7 @@ const STATUS_LABELS: Record<Expense["status"], string> = {
 const today = () => new Date().toISOString().slice(0, 10);
 
 export default function Expenses() {
-  const { expenses, vendors, addExpense, updateExpense, fetchExpenseHistory, isLoading, error: loadError } = useData();
+  const { expenses, vendors, addExpense, updateExpense, deleteExpense, fetchExpenseHistory, isLoading, error: loadError } = useData();
   const { currencyCode } = useCurrency();
   const [searchParams, setSearchParams] = useSearchParams();
   const [open, setOpen] = useState(false);
@@ -41,6 +42,9 @@ export default function Expenses() {
   const [historyId, setHistoryId] = useState<string | null>(null);
   const [historyEntries, setHistoryEntries] = useState<ExpenseHistoryEntry[] | null>(null);
   const [historyError, setHistoryError] = useState("");
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [deleteError, setDeleteError] = useState("");
+  const [toast, setToast] = useState("");
 
   useEffect(() => {
     if (searchParams.get("new") === "1") {
@@ -48,6 +52,12 @@ export default function Expenses() {
       setSearchParams({}, { replace: true });
     }
   }, [searchParams, setSearchParams]);
+
+  useEffect(() => {
+    if (!toast) return;
+    const t = setTimeout(() => setToast(""), 3000);
+    return () => clearTimeout(t);
+  }, [toast]);
 
   const [date, setDate] = useState(today());
   const [vendorId, setVendorId] = useState(vendors[0]?.id ?? "");
@@ -148,6 +158,24 @@ export default function Expenses() {
     setHistoryError("");
   };
 
+  const confirmDelete = async (expense: Expense) => {
+    const confirmed = window.confirm(
+      `Are you sure you want to delete this expense (${vendorName(expense.vendorId)}, ${currency(expense.amount, currencyCode)})? This action cannot be undone.`
+    );
+    if (!confirmed) return;
+    setDeletingId(expense.id);
+    setDeleteError("");
+    try {
+      await deleteExpense(expense.id);
+      if (detailId === expense.id) setDetailId(null);
+      setToast("Expense deleted.");
+    } catch (err) {
+      setDeleteError(err instanceof ApiError ? err.message : "Could not delete this expense. Please try again.");
+    } finally {
+      setDeletingId(null);
+    }
+  };
+
   const formatChangeValue = (field: string, value: string | number | null) => {
     if (value === null || value === undefined) return "—";
     if (field === "amount") return currency(Number(value), currencyCode);
@@ -171,6 +199,7 @@ export default function Expenses() {
       </div>
 
       {loadError && <div className="signin-error">{loadError}</div>}
+      {deleteError && <div className="signin-error">{deleteError}</div>}
 
       {expenses.length === 0 && !isLoading && !loadError ? (
         <div className="empty-state">No expenses yet. Record your first expense to get started.</div>
@@ -219,6 +248,20 @@ export default function Expenses() {
                     >
                       <EditIcon width={14} height={14} />
                     </button>
+                    {e.status === "pending" && (
+                      <button
+                        className="btn-secondary icon-btn icon-btn-danger"
+                        title="Delete expense"
+                        aria-label="Delete expense"
+                        disabled={deletingId === e.id}
+                        onClick={(ev) => {
+                          ev.stopPropagation();
+                          confirmDelete(e);
+                        }}
+                      >
+                        <TrashIcon width={14} height={14} />
+                      </button>
+                    )}
                   </div>
                 </td>
               </tr>
@@ -372,6 +415,8 @@ export default function Expenses() {
           )}
         </Modal>
       )}
+
+      {toast && <Toast message={toast} />}
     </div>
   );
 }

@@ -9,7 +9,8 @@ import { ApiError } from "../lib/apiClient";
 import Modal from "../components/Modal";
 import StatusBadge from "../components/StatusBadge";
 import UpgradeBanner from "../components/UpgradeBanner";
-import { EditIcon, PlusIcon } from "../components/icons";
+import Toast from "../components/Toast";
+import { EditIcon, PlusIcon, TrashIcon } from "../components/icons";
 import type { Invoice, InvoiceLineItem, InvoiceStatus } from "../types";
 
 const today = () => new Date().toISOString().slice(0, 10);
@@ -30,8 +31,17 @@ const NEXT_ACTION: Partial<Record<InvoiceStatus, { label: string; next: InvoiceS
 };
 
 export default function Invoices() {
-  const { invoices, customers, addInvoice, updateInvoiceStatus, updateInvoice, fetchInvoiceItems, isLoading, error: loadError } =
-    useData();
+  const {
+    invoices,
+    customers,
+    addInvoice,
+    updateInvoiceStatus,
+    updateInvoice,
+    deleteInvoice,
+    fetchInvoiceItems,
+    isLoading,
+    error: loadError,
+  } = useData();
   const { currencyCode, currencyOptions } = useCurrency();
   const { user } = useAuth();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -43,6 +53,8 @@ export default function Invoices() {
   const [actioningId, setActioningId] = useState<string | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editStatus, setEditStatus] = useState<InvoiceStatus>("draft");
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [toast, setToast] = useState("");
 
   const [customerId, setCustomerId] = useState(customers[0]?.id ?? "");
   const [issueDate, setIssueDate] = useState(today());
@@ -62,6 +74,12 @@ export default function Invoices() {
   useEffect(() => {
     if (!customerId && customers[0]) setCustomerId(customers[0].id);
   }, [customers, customerId]);
+
+  useEffect(() => {
+    if (!toast) return;
+    const t = setTimeout(() => setToast(""), 3000);
+    return () => clearTimeout(t);
+  }, [toast]);
 
   const customerName = (id: string) => customers.find((c) => c.id === id)?.name ?? "—";
 
@@ -169,6 +187,21 @@ export default function Invoices() {
     }
   };
 
+  const confirmDelete = async (invoice: Invoice) => {
+    const confirmed = window.confirm(`Are you sure you want to delete Invoice ${invoice.number}? This action cannot be undone.`);
+    if (!confirmed) return;
+    setDeletingId(invoice.id);
+    setActionError("");
+    try {
+      await deleteInvoice(invoice.id);
+      setToast(`Invoice ${invoice.number} deleted.`);
+    } catch (err) {
+      setActionError(err instanceof ApiError ? err.message : "Could not delete this invoice. Please try again.");
+    } finally {
+      setDeletingId(null);
+    }
+  };
+
   const tabs: { key: "all" | Invoice["status"]; label: string }[] = [
     { key: "all", label: "All" },
     { key: "draft", label: "Draft" },
@@ -269,6 +302,17 @@ export default function Invoices() {
                         >
                           <EditIcon width={14} height={14} />
                         </button>
+                        {inv.status === "draft" && (
+                          <button
+                            className="btn-secondary icon-btn icon-btn-danger"
+                            onClick={() => confirmDelete(inv)}
+                            disabled={deletingId === inv.id}
+                            title="Delete invoice"
+                            aria-label="Delete invoice"
+                          >
+                            <TrashIcon width={14} height={14} />
+                          </button>
+                        )}
                       </div>
                     </td>
                   </tr>
@@ -400,6 +444,8 @@ export default function Invoices() {
           </div>
         </Modal>
       )}
+
+      {toast && <Toast message={toast} />}
     </div>
   );
 }

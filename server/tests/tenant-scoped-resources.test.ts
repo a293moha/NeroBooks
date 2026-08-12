@@ -282,6 +282,59 @@ test("expense amount must be a non-negative number on edit", async () => {
   assert.equal(res.status, 400);
 });
 
+// ---------- Delete: positive controls ----------
+// Regression coverage for the expenses.create permission check added to
+// DELETE /expenses/:id (it previously had no permission check at all).
+
+test("deleting a pending expense removes it, and a non-pending expense cannot be deleted", async () => {
+  const created = await authed(a.token).post(`/api/companies/${a.companyId}/expenses`).send({
+    date: "2026-08-04",
+    category: "Office Supplies",
+    amount: 10,
+  });
+  assert.equal(created.status, 201);
+  const expenseId = created.body.id;
+
+  const deleted = await authed(a.token).delete(`/api/companies/${a.companyId}/expenses/${expenseId}`);
+  assert.equal(deleted.status, 204);
+
+  const afterDelete = await authed(a.token).get(`/api/companies/${a.companyId}/expenses/${expenseId}`);
+  assert.equal(afterDelete.status, 404);
+
+  // a.expenseId was approved by an earlier test -- deleting it now must be refused.
+  const deleteApproved = await authed(a.token).delete(`/api/companies/${a.companyId}/expenses/${a.expenseId}`);
+  assert.equal(deleteApproved.status, 409);
+});
+
+test("deleting a draft invoice removes it, and a sent invoice cannot be deleted", async () => {
+  const created = await authed(a.token).post(`/api/companies/${a.companyId}/invoices`).send({
+    customerId: a.customerId,
+    issueDate: "2026-08-01",
+    dueDate: "2026-08-31",
+    lineItems: [{ description: "Delete me", quantity: 1, unitPrice: 1 }],
+  });
+  assert.equal(created.status, 201);
+  const invoiceId = created.body.id;
+
+  const deleted = await authed(a.token).delete(`/api/companies/${a.companyId}/invoices/${invoiceId}`);
+  assert.equal(deleted.status, 204);
+
+  const afterDelete = await authed(a.token).get(`/api/companies/${a.companyId}/invoices/${invoiceId}`);
+  assert.equal(afterDelete.status, 404);
+
+  const sent = await authed(a.token).post(`/api/companies/${a.companyId}/invoices`).send({
+    customerId: a.customerId,
+    issueDate: "2026-08-01",
+    dueDate: "2026-08-31",
+    status: "sent",
+    lineItems: [{ description: "Do not delete me", quantity: 1, unitPrice: 1 }],
+  });
+  assert.equal(sent.status, 201);
+
+  const deleteSent = await authed(a.token).delete(`/api/companies/${a.companyId}/invoices/${sent.body.id}`);
+  assert.equal(deleteSent.status, 409);
+});
+
 // ---------- Cross-company denial: list ----------
 
 test("attack: User A cannot list Company B's customers/invoices/expenses", async () => {

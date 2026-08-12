@@ -613,6 +613,31 @@ textarea:focus {
   justify-content: center;
 }
 
+.icon-btn-danger {
+  color: var(--status-critical);
+  border-color: rgba(208, 59, 59, 0.35);
+}
+
+.icon-btn-danger:hover {
+  background: rgba(208, 59, 59, 0.08);
+}
+
+/* ---------- Toast ---------- */
+.toast {
+  position: fixed;
+  bottom: 24px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: var(--text-primary);
+  color: var(--white);
+  padding: 12px 20px;
+  border-radius: 10px;
+  font-size: 13.5px;
+  font-weight: 600;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.25);
+  z-index: 100;
+}
+
 .clickable-row {
   cursor: pointer;
 }
