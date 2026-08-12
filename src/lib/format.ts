@@ -1,4 +1,8 @@
-import type { Invoice } from "../types";
+import type { AccountType, Invoice } from "../types";
+
+export function accountTypeLabel(type: AccountType): string {
+  return type.charAt(0).toUpperCase() + type.slice(1);
+}
 
 export function currency(amount: number, currencyCode: string = "USD"): string {
   try {

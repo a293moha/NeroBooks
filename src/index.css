@@ -524,6 +524,32 @@ textarea:focus {
   border-bottom: none;
 }
 
+.journal-line-row {
+  display: grid;
+  grid-template-columns: 1.4fr 1fr 100px 100px 32px;
+  gap: 10px;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border);
+  align-items: center;
+}
+
+.journal-line-row:last-child {
+  border-bottom: none;
+}
+
+.journal-line-view-row {
+  display: grid;
+  grid-template-columns: 1.4fr 1fr 100px 100px;
+  gap: 10px;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border);
+  align-items: center;
+}
+
+.journal-line-view-row:last-child {
+  border-bottom: none;
+}
+
 .remove-line-btn {
   border: none;
   background: none;

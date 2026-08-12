@@ -1,6 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from "react";
 import type {
   Account,
+  AccountType,
   Customer,
   Expense,
   ExpenseCategory,
@@ -8,10 +9,10 @@ import type {
   Invoice,
   InvoiceLineItem,
   InvoiceStatus,
-  Transaction,
+  JournalEntry,
+  JournalEntryStatus,
   Vendor,
 } from "../types";
-import { seedAccounts, seedTransactions } from "../lib/seed";
 import { useCompany } from "./CompanyContext";
 import { useApiClient, ApiError } from "../lib/apiClient";
 
@@ -72,6 +73,35 @@ interface ExpenseRow {
   memo: string | null;
   status: string;
 }
+interface AccountRow {
+  id: string;
+  code: string;
+  name: string;
+  account_type: string;
+  parent_account_id: string | null;
+  is_active: boolean;
+  is_cash_account: boolean;
+  has_activity: boolean;
+  balance: string;
+}
+interface JournalEntryLineRow {
+  id: string;
+  account_id: string;
+  account_code: string;
+  account_name: string;
+  debit: string;
+  credit: string;
+  description: string | null;
+}
+interface JournalEntryRow {
+  id: string;
+  entry_date: string;
+  reference: string | null;
+  description: string | null;
+  status: string;
+  posted_at: string | null;
+  lines: JournalEntryLineRow[];
+}
 
 export interface NewCustomerInput {
   name: string;
@@ -117,6 +147,38 @@ export interface EditExpenseInput {
   paymentMethod: string;
   memo?: string;
 }
+export interface NewAccountInput {
+  code: string;
+  name: string;
+  type: AccountType;
+  parentAccountId?: string;
+}
+export interface EditAccountInput {
+  code: string;
+  name: string;
+  type: AccountType;
+  parentAccountId?: string | null;
+  isActive: boolean;
+}
+export interface JournalLineFormInput {
+  accountId: string;
+  debit: number;
+  credit: number;
+  description?: string;
+}
+export interface NewJournalEntryInput {
+  entryDate: string;
+  reference?: string;
+  description?: string;
+  lines: JournalLineFormInput[];
+  post?: boolean;
+}
+export interface EditJournalEntryInput {
+  entryDate: string;
+  reference?: string;
+  description?: string;
+  lines: JournalLineFormInput[];
+}
 
 interface StoreShape {
   customers: Customer[];
@@ -124,7 +186,7 @@ interface StoreShape {
   invoices: Invoice[];
   expenses: Expense[];
   accounts: Account[];
-  transactions: Transaction[];
+  journalEntries: JournalEntry[];
 }
 
 interface DataContextValue extends StoreShape {
@@ -141,24 +203,32 @@ interface DataContextValue extends StoreShape {
   deleteExpense: (id: string) => Promise<void>;
   fetchExpenseHistory: (id: string) => Promise<ExpenseHistoryEntry[]>;
   addVendor: (input: NewVendorInput) => Promise<void>;
+  addAccount: (input: NewAccountInput) => Promise<void>;
+  updateAccount: (id: string, input: EditAccountInput) => Promise<void>;
+  deleteAccount: (id: string) => Promise<void>;
+  addJournalEntry: (input: NewJournalEntryInput) => Promise<void>;
+  updateJournalEntry: (id: string, input: EditJournalEntryInput) => Promise<void>;
+  postJournalEntry: (id: string) => Promise<void>;
+  deleteJournalEntry: (id: string) => Promise<void>;
 }
 
 const DataContext = createContext<DataContextValue | null>(null);
 
 /**
- * customers/vendors/invoices/expenses are real, company-scoped data from
- * the Railway API — Neon through that API is the only source of truth,
- * never localStorage (see docs/backend-roadmap.md; the old
- * localStorage-backed version of this file is gone, not just unused).
- * accounts/transactions (chart of accounts / general ledger) remain
- * seed-only: no backend CRUD exists for them yet, which is out of scope
- * for the customers/invoices/expenses migration this file is part of.
+ * Every resource here is real, company-scoped data from the Railway API —
+ * Neon through that API is the only source of truth, never localStorage
+ * (see docs/backend-roadmap.md; the old localStorage-backed version of
+ * this file is gone, not just unused). accounts/journalEntries (chart of
+ * accounts / general ledger) became real as of Phase 1 of the QuickBooks-
+ * parity roadmap — previously seed-only, see git history for the old
+ * src/lib/seed.ts this replaced.
  *
  * "balance" on a customer/vendor isn't a stored column anywhere — it's
  * derived here from the same invoices/expenses this provider already
  * fetches (outstanding invoice total per customer; pending expense total
- * per vendor), the same way the old seed data represented it, just
- * computed from real records instead of hardcoded.
+ * per vendor). "balance" on an Account *is* a stored-looking field on the
+ * type, but is entirely server-computed from posted journal entry lines
+ * (see accounting.routes.ts) — never client-set, never derived here.
  */
 export function DataProvider({ children }: { children: ReactNode }) {
   const { companyId } = useCompany();
@@ -168,8 +238,20 @@ export function DataProvider({ children }: { children: ReactNode }) {
   const [vendors, setVendors] = useState<Vendor[]>([]);
   const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [expenses, setExpenses] = useState<Expense[]>([]);
+  const [accounts, setAccounts] = useState<Account[]>([]);
+  const [journalEntries, setJournalEntries] = useState<JournalEntry[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const mapJournalLine = (line: JournalEntryLineRow) => ({
+    id: line.id,
+    accountId: line.account_id,
+    accountCode: line.account_code,
+    accountName: line.account_name,
+    debit: Number(line.debit),
+    credit: Number(line.credit),
+    description: line.description ?? undefined,
+  });
 
   const refetch = useCallback(async () => {
     if (!companyId) {
@@ -177,17 +259,21 @@ export function DataProvider({ children }: { children: ReactNode }) {
       setVendors([]);
       setInvoices([]);
       setExpenses([]);
+      setAccounts([]);
+      setJournalEntries([]);
       return;
     }
 
     setIsLoading(true);
     setError(null);
     try {
-      const [customerRows, vendorRows, invoiceRows, expenseRows] = await Promise.all([
+      const [customerRows, vendorRows, invoiceRows, expenseRows, accountRows, journalEntryRows] = await Promise.all([
         api.get<CustomerRow[]>(`/api/companies/${companyId}/customers`),
         api.get<VendorRow[]>(`/api/companies/${companyId}/vendors`),
         api.get<InvoiceRow[]>(`/api/companies/${companyId}/invoices`),
         api.get<ExpenseRow[]>(`/api/companies/${companyId}/expenses`),
+        api.get<AccountRow[]>(`/api/companies/${companyId}/accounts`),
+        api.get<JournalEntryRow[]>(`/api/companies/${companyId}/journal-entries`),
       ]);
 
       const outstandingByCustomer = new Map<string, number>();
@@ -229,6 +315,28 @@ export function DataProvider({ children }: { children: ReactNode }) {
         };
       });
 
+      const mappedAccounts: Account[] = accountRows.map((row) => ({
+        id: row.id,
+        code: row.code,
+        name: row.name,
+        type: row.account_type as AccountType,
+        parentAccountId: row.parent_account_id,
+        isActive: row.is_active,
+        isCashAccount: row.is_cash_account,
+        hasActivity: row.has_activity,
+        balance: Number(row.balance),
+      }));
+
+      const mappedJournalEntries: JournalEntry[] = journalEntryRows.map((row) => ({
+        id: row.id,
+        entryDate: row.entry_date,
+        reference: row.reference ?? undefined,
+        description: row.description ?? undefined,
+        status: row.status as JournalEntryStatus,
+        postedAt: row.posted_at,
+        lines: row.lines.map(mapJournalLine),
+      }));
+
       setCustomers(
         customerRows.map((row) => ({
           id: row.id,
@@ -250,6 +358,8 @@ export function DataProvider({ children }: { children: ReactNode }) {
       );
       setInvoices(mappedInvoices);
       setExpenses(mappedExpenses);
+      setAccounts(mappedAccounts);
+      setJournalEntries(mappedJournalEntries);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Could not load your data. Please try again.");
     } finally {
@@ -321,7 +431,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
       issueDate: input.issueDate,
       dueDate: input.dueDate,
       status: input.status,
-      lineItems: input.lineItems.map((li) => ({ description: li.description, qty: li.qty, rate: li.rate })),
+      lineItems: input.lineItems.map((li) => ({ description: li.description, quantity: li.qty, unitPrice: li.rate })),
       currency: input.currency,
     });
     await refetch();
@@ -361,6 +471,63 @@ export function DataProvider({ children }: { children: ReactNode }) {
     await refetch();
   };
 
+  const addAccount = async (input: NewAccountInput) => {
+    await api.post(`/api/companies/${companyId}/accounts`, {
+      code: input.code,
+      name: input.name,
+      accountType: input.type,
+      parentAccountId: input.parentAccountId || undefined,
+    });
+    await refetch();
+  };
+
+  const updateAccount = async (id: string, input: EditAccountInput) => {
+    await api.patch(`/api/companies/${companyId}/accounts/${id}`, {
+      code: input.code,
+      name: input.name,
+      accountType: input.type,
+      parentAccountId: input.parentAccountId ?? null,
+      isActive: input.isActive,
+    });
+    await refetch();
+  };
+
+  const deleteAccount = async (id: string) => {
+    await api.del(`/api/companies/${companyId}/accounts/${id}`);
+    await refetch();
+  };
+
+  const addJournalEntry = async (input: NewJournalEntryInput) => {
+    await api.post(`/api/companies/${companyId}/journal-entries`, {
+      entryDate: input.entryDate,
+      reference: input.reference,
+      description: input.description,
+      lines: input.lines.map((l) => ({ accountId: l.accountId, debit: l.debit, credit: l.credit, description: l.description })),
+      post: input.post ?? false,
+    });
+    await refetch();
+  };
+
+  const updateJournalEntry = async (id: string, input: EditJournalEntryInput) => {
+    await api.patch(`/api/companies/${companyId}/journal-entries/${id}`, {
+      entryDate: input.entryDate,
+      reference: input.reference,
+      description: input.description,
+      lines: input.lines.map((l) => ({ accountId: l.accountId, debit: l.debit, credit: l.credit, description: l.description })),
+    });
+    await refetch();
+  };
+
+  const postJournalEntry = async (id: string) => {
+    await api.post(`/api/companies/${companyId}/journal-entries/${id}/post`);
+    await refetch();
+  };
+
+  const deleteJournalEntry = async (id: string) => {
+    await api.del(`/api/companies/${companyId}/journal-entries/${id}`);
+    await refetch();
+  };
+
   return (
     <DataContext.Provider
       value={{
@@ -368,8 +535,8 @@ export function DataProvider({ children }: { children: ReactNode }) {
         vendors,
         invoices,
         expenses,
-        accounts: seedAccounts,
-        transactions: seedTransactions,
+        accounts,
+        journalEntries,
         isLoading,
         error,
         addInvoice,
@@ -383,6 +550,13 @@ export function DataProvider({ children }: { children: ReactNode }) {
         deleteExpense,
         fetchExpenseHistory,
         addVendor,
+        addAccount,
+        updateAccount,
+        deleteAccount,
+        addJournalEntry,
+        updateJournalEntry,
+        postJournalEntry,
+        deleteJournalEntry,
       }}
     >
       {children}

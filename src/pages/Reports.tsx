@@ -32,8 +32,8 @@ export default function Reports() {
   if (!user) return null;
   const limits = planLimits[user.plan];
 
-  const income = accounts.filter((a) => a.type === "Income");
-  const expenseAccounts = accounts.filter((a) => a.type === "Expense");
+  const income = accounts.filter((a) => a.type === "income");
+  const expenseAccounts = accounts.filter((a) => a.type === "expense");
   const totalIncome = income.reduce((sum, a) => sum + a.balance, 0);
   const totalExpenseAccount = expenseAccounts.reduce((sum, a) => sum + a.balance, 0);
   const netIncome = totalIncome - totalExpenseAccount;
@@ -45,14 +45,20 @@ export default function Reports() {
     }, {})
   );
 
-  const assets = accounts.filter((a) => a.type === "Asset");
-  const liabilities = accounts.filter((a) => a.type === "Liability");
-  const equity = accounts.filter((a) => a.type === "Equity");
+  const assets = accounts.filter((a) => a.type === "asset");
+  const liabilities = accounts.filter((a) => a.type === "liability");
+  const equity = accounts.filter((a) => a.type === "equity");
   const totalAssets = assets.reduce((sum, a) => sum + a.balance, 0);
   const totalLiabilities = liabilities.reduce((sum, a) => sum + a.balance, 0);
   const totalEquity = equity.reduce((sum, a) => sum + a.balance, 0);
 
-  const endingCash = accounts.find((a) => a.code === "1000")?.balance ?? 0;
+  // Cash accounts are the ones actually linked to a real bank account
+  // (bank_accounts.chart_of_account_id), not guessed from a hardcoded
+  // account code -- that link is the only reliable signal once the chart
+  // of accounts is user-editable. Reads as $0 (with a note below) until a
+  // bank account is linked, rather than silently guessing wrong.
+  const cashAccounts = accounts.filter((a) => a.isCashAccount);
+  const endingCash = cashAccounts.reduce((sum, a) => sum + a.balance, 0);
   const netChangeInCash = netIncome;
   const beginningCash = endingCash - netChangeInCash;
 
@@ -247,6 +253,11 @@ export default function Reports() {
           {tab === "cf" && (
             <div className="report-section">
               <h3 className="card-title">Cash Flow Statement</h3>
+              {cashAccounts.length === 0 && (
+                <p className="cell-muted" style={{ marginBottom: 12 }}>
+                  Link a bank account to a Cash-type account in the Chart of Accounts for accurate cash flow reporting. Showing $0 until then.
+                </p>
+              )}
               <div className="report-line">
                 <span>Operating activities</span>
                 <span>{fmt(netIncome)}</span>

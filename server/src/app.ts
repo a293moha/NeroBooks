@@ -5,6 +5,7 @@ import { authRouter } from "./routes/auth.routes.js";
 import { companiesRouter } from "./routes/companies.routes.js";
 import { meRouter, membersRouter } from "./routes/memberships.routes.js";
 import { resourcesRouter } from "./routes/resources.routes.js";
+import { accountingRouter } from "./routes/accounting.routes.js";
 import { platformRouter } from "./routes/platform.routes.js";
 import { errorHandler } from "./middleware/errorHandler.js";
 
@@ -29,6 +30,7 @@ export function createApp() {
   app.use("/api/companies", companiesRouter);
   app.use("/api/companies/:companyId/members", membersRouter);
   app.use("/api/companies/:companyId", resourcesRouter);
+  app.use("/api/companies/:companyId", accountingRouter);
   app.use("/api/platform", platformRouter);
 
   app.use(errorHandler);

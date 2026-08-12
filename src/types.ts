@@ -92,21 +92,41 @@ export interface ExpenseHistoryEntry {
   changes: ExpenseHistoryChange[];
 }
 
-export type AccountType = "Asset" | "Liability" | "Equity" | "Income" | "Expense";
+export type AccountType = "asset" | "liability" | "equity" | "income" | "expense";
 
 export interface Account {
   id: string;
   code: string;
   name: string;
   type: AccountType;
+  parentAccountId: string | null;
+  isActive: boolean;
+  /** True when a bank_accounts row links this account as a real cash/bank account — used by Reports to compute ending cash without guessing from code/name. */
+  isCashAccount: boolean;
+  /** True when any journal entry line (draft or posted) references this account — drives Delete-vs-Deactivate in the UI. */
+  hasActivity: boolean;
+  /** Server-computed from posted journal entry lines only, sign-flipped by type so every account's balance reads as a natural positive number. Never client-settable. */
   balance: number;
 }
 
-export interface Transaction {
+export type JournalEntryStatus = "draft" | "posted" | "void";
+
+export interface JournalEntryLine {
   id: string;
-  date: string;
   accountId: string;
-  description: string;
+  accountCode: string;
+  accountName: string;
   debit: number;
   credit: number;
+  description?: string;
+}
+
+export interface JournalEntry {
+  id: string;
+  entryDate: string;
+  reference?: string;
+  description?: string;
+  status: JournalEntryStatus;
+  postedAt?: string | null;
+  lines: JournalEntryLine[];
 }
